@@ -2,3 +2,5 @@ venv/
 .env
 __pycache__/
 repositories/
+chroma_db/
+.DS_Store
