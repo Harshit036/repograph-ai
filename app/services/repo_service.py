@@ -50,9 +50,8 @@ def scan_repository(repo_path: str):
                             embedding = generate_embedding(chunk["content"])
                             chunk_id = str(uuid.uuid4())
                             metadata = {
-                                "file_name": file,
                                 "file_path": file_path,
-                                "chunk_type": chunk["type"],
+                                "file_name": file,
                             }
                             store_chunk(
                                 chunk_id=chunk_id,

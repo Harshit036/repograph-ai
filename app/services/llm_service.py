@@ -1,16 +1,10 @@
 import ollama
 
 
-def generate_response(user_message: str):
+def generate_response(prompt: str):
+
     response = ollama.chat(
-        model="qwen2.5-coder:7b",
-        messages=[
-            {
-                "role": "system",
-                "content": "You are RepoGraph AI, an intelligent repository analysis assistant.",
-            },
-            {"role": "user", "content": user_message},
-        ],
+        model="qwen2.5-coder:7b", messages=[{"role": "user", "content": prompt}]
     )
 
     return response["message"]["content"]
