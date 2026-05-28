@@ -4,6 +4,7 @@ from pydantic import BaseModel
 from app.services.repo_service import clone_repository, scan_repository
 from app.services.graph_service import build_repository_graph
 from app.storage.repository_graph import repository_graph
+from app.storage.chunk_store import chunk_store
 
 router = APIRouter()
 
@@ -15,8 +16,9 @@ class RepoRequest(BaseModel):
 @router.post("/ingest-repo")
 def ingest_repo(request: RepoRequest):
     repo_path = clone_repository(request.repo_url)
-    repository_data = scan_repository(repo_path)
+    chunk_store.clear()
     repository_graph.clear()
+    repository_data = scan_repository(repo_path)
     repository_graph.update(build_repository_graph(repository_data))
 
     return {

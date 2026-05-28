@@ -3,10 +3,9 @@ from git import Repo
 import uuid
 
 from app.services.embedding_service import generate_embedding
-
 from app.services.vector_db_service import store_chunk
-
-from app.services.chunking_service import chunk_python_code
+from app.services.chunking_service import chunk_file
+from app.storage.chunk_store import chunk_store
 
 REPO_BASE_PATH = "repositories"
 
@@ -42,10 +41,9 @@ def scan_repository(repo_path: str):
             try:
                 with open(file_path, "r", encoding="utf-8") as f:
                     content = f.read()
-                    chunks = []
-                    # Chunk Python files
-                    if file.endswith(".py"):
-                        chunks = chunk_python_code(content)
+                    ext = os.path.splitext(file)[1]
+                    chunks = chunk_file(content, ext)
+                    if chunks:
                         for chunk in chunks:
                             embedding = generate_embedding(chunk["content"])
                             chunk_id = str(uuid.uuid4())
@@ -58,6 +56,9 @@ def scan_repository(repo_path: str):
                                 embedding=embedding,
                                 content=chunk["content"],
                                 metadata=metadata,
+                            )
+                            chunk_store.append(
+                                {"content": chunk["content"], "metadata": metadata}
                             )
 
                     repository_data.append(

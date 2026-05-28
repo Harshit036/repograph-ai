@@ -1,11 +1,10 @@
 from sentence_transformers import SentenceTransformer
+from app.core.config import get_settings
 
-# Load embedding model
-embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
+_settings = get_settings()
+embedding_model = SentenceTransformer(_settings.embedding_model)
 
 
-def generate_embedding(text: str):
+def generate_embedding(text: str) -> list:
+    return embedding_model.encode(text).tolist()
 
-    embedding = embedding_model.encode(text)
-
-    return embedding.tolist()

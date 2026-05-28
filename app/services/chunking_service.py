@@ -1,41 +1,97 @@
-import ast
+from tree_sitter_language_pack import get_parser
+
+LANGUAGE_MAP = {
+    ".py": "python",
+    ".js": "javascript",
+    ".jsx": "javascript",
+    ".ts": "typescript",
+    ".tsx": "typescript",
+    ".go": "go",
+}
+
+# Node types that represent extractable code units per language
+CHUNK_NODE_TYPES = {
+    "python": {"function_definition", "class_definition"},
+    "javascript": {"function_declaration", "class_declaration", "method_definition"},
+    "typescript": {"function_declaration", "class_declaration", "method_definition"},
+    "go": {"function_declaration", "method_declaration"},
+}
+
+TYPE_LABEL = {
+    "function_definition": "function",
+    "class_definition": "class",
+    "function_declaration": "function",
+    "class_declaration": "class",
+    "method_definition": "method",
+    "method_declaration": "method",
+}
 
 
-def extract_chunks(node, content, chunks):
-    if isinstance(node, ast.FunctionDef):
-        chunk_text = ast.get_source_segment(content, node)
+def _extract_name(node, content_bytes: bytes) -> str:
+    name_node = node.child_by_field_name("name")
+    if name_node:
+        return content_bytes[name_node.start_byte() : name_node.end_byte()].decode("utf-8", errors="replace")
+    return "<anonymous>"
+
+
+def _walk(node, content_bytes: bytes, target_types: set, chunks: list):
+    kind = node.kind()
+    if kind in target_types:
+        name = _extract_name(node, content_bytes)
+        content_text = content_bytes[node.start_byte() : node.end_byte()].decode("utf-8", errors="replace")
         chunks.append(
             {
-                "type": "function",
-                "name": node.name,
-                "content": chunk_text,
-                "start_line": node.lineno,
-                "end_line": node.end_lineno,
+                "type": TYPE_LABEL.get(kind, kind),
+                "name": name,
+                "content": content_text,
+                "start_line": node.start_position().row + 1,
+                "end_line": node.end_position().row + 1,
             }
         )
-    elif isinstance(node, ast.ClassDef):
-        chunk_text = ast.get_source_segment(content, node)
-        chunks.append(
-            {
-                "type": "class",
-                "name": node.name,
-                "content": chunk_text,
-                "start_line": node.lineno,
-                "end_line": node.end_lineno,
-            }
-        )
-
-    # Recursively traverse child nodes
-    for child in ast.iter_child_nodes(node):
-        extract_chunks(child, content, chunks)
+    for i in range(node.named_child_count()):
+        _walk(node.named_child(i), content_bytes, target_types, chunks)
 
 
-def chunk_python_code(content: str):
+def _chunk_with_treesitter(content: str, language: str) -> list:
     try:
-        tree = ast.parse(content)
-        chunks = []
-        extract_chunks(tree, content, chunks)
+        parser = get_parser(language)
+        tree = parser.parse(content)
+        root = tree.root_node()
+        content_bytes = content.encode("utf-8")
+        target_types = CHUNK_NODE_TYPES.get(language, set())
+        chunks: list = []
+        _walk(root, content_bytes, target_types, chunks)
         return chunks
     except Exception as e:
-        print(f"Chunking failed: {e}")
+        print(f"Tree-sitter chunking failed ({language}): {e}")
         return []
+
+
+def _chunk_raw(content: str, file_extension: str, block_size: int = 50) -> list:
+    lines = content.splitlines()
+    chunks = []
+    for i in range(0, len(lines), block_size):
+        block = lines[i : i + block_size]
+        chunks.append(
+            {
+                "type": "raw",
+                "name": f"block_{i // block_size + 1}",
+                "content": "\n".join(block),
+                "start_line": i + 1,
+                "end_line": min(i + block_size, len(lines)),
+            }
+        )
+    return chunks
+
+
+def chunk_file(content: str, file_extension: str) -> list:
+    if not content.strip():
+        return []
+    language = LANGUAGE_MAP.get(file_extension.lower())
+    if language:
+        return _chunk_with_treesitter(content, language)
+    return _chunk_raw(content, file_extension)
+
+
+def chunk_python_code(content: str) -> list:
+    return chunk_file(content, ".py")

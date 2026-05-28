@@ -1,135 +1,242 @@
 from app.agents.tools import TOOLS, semantic_search
-
 from app.services.llm_service import generate_response
 
 
-def reflect_on_observations(user_query, observations):
+def extract_facts(step: str, results: list) -> list:
+    if not results:
+        return []
 
-    context = "\n\n".join(observations[:5])
+    context = "\n".join(results[:3])
 
-    prompt = f"""
-        You are evaluating repository evidence.
+    prompt = f"""Extract 1-2 key facts from this repository evidence.
 
-        User Goal:
-        {user_query}
+Investigation step: {step}
 
-        Repository Evidence:
-        {context}
+Evidence:
+{context}
 
-        Answer ONLY:
-
-        YES → enough information exists
-
-        NO → more investigation needed
-        """
-
+Return ONLY brief factual statements, one per line.
+Example: "generate_embedding uses all-MiniLM-L6-v2 model"
+Example: "rag_service calls embedding_service and vector_db_service"
+"""
     response = generate_response(prompt)
-    return "YES" in response.upper()
+    return [line.strip() for line in response.strip().split("\n") if line.strip()]
 
 
-def generate_plan(user_query: str):
+def generate_plan(user_query: str, memory: dict = None):
+    known = (
+        "\n".join(memory["discovered_facts"])
+        if memory and memory["discovered_facts"]
+        else "Nothing yet."
+    )
+    searched = (
+        ", ".join(memory["searched_queries"])
+        if memory and memory["searched_queries"]
+        else "None."
+    )
 
-    prompt = f"""
-        You are an autonomous repository analysis planner.
+    prompt = f"""You are an autonomous repository analysis planner.
 
-        Given the user's request,
-        generate a short investigation plan.
+What I already know:
+{known}
 
-        Rules:
-        - Use concise steps
-        - Focus on repository analysis
-        - Maximum 4 steps
-        - One step per line
+Queries already searched (do NOT repeat these):
+{searched}
 
-        User Request:
-        {user_query}
-        """
+Generate a short investigation plan targeting MISSING information.
+
+Rules:
+- Concise steps
+- Focus on repository analysis
+- Maximum 4 steps
+- One step per line
+- Do not repeat already searched queries
+
+User Request:
+{user_query}"""
 
     response = generate_response(prompt)
     return response.split("\n")
 
 
 def choose_tool(user_query: str):
-    prompt = f"""
-        You are an AI repository agent.
+    prompt = f"""You are an AI repository agent.
 
-        Choose ONE tool.
+Choose ONE tool.
 
-        Available tools:
+Available tools:
 
-        1. semantic_search
-        Use for broad conceptual repository search.
+1. semantic_search
+Use for broad conceptual repository search.
 
-        2. keyword_search
-        Use for exact keyword matching.
+2. keyword_search
+Use for exact keyword matching.
 
-        Return ONLY this format:
+Return ONLY this format:
+tool_name:input
 
-        tool_name:input
+Examples:
+semantic_search:routing flow
+keyword_search:middleware
 
-        Examples:
-
-        semantic_search:routing flow
-        keyword_search:middleware
-
-        User request:
-        {user_query}
-        """
+User request:
+{user_query}"""
 
     response = generate_response(prompt)
-
     return response.strip()
 
 
-def replan(user_query, observations):
-
+def reflect_on_observations(user_query: str, observations: list, memory: dict = None):
+    known = (
+        "\n".join(memory["discovered_facts"])
+        if memory and memory["discovered_facts"]
+        else ""
+    )
     context = "\n\n".join(observations[:5])
 
-    prompt = f"""
-        You are an autonomous repository agent.
+    prompt = f"""You are evaluating repository evidence.
 
-        The investigation is incomplete.
+User Goal:
+{user_query}
 
-        User Goal:
-        {user_query}
+Known facts:
+{known}
 
-        Current Repository Evidence:
-        {context}
+Additional Repository Evidence:
+{context}
 
-        Generate a NEW investigation plan.
-
-        Rules:
-        - Maximum 3 steps
-        - One step per line
-        - Focus on missing information
-        """
+Answer ONLY:
+YES → enough information exists
+NO → more investigation needed"""
 
     response = generate_response(prompt)
+    return "YES" in response.upper()
 
+
+def replan(user_query: str, observations: list, memory: dict = None):
+    known = (
+        "\n".join(memory["discovered_facts"])
+        if memory and memory["discovered_facts"]
+        else "Nothing yet."
+    )
+    searched = (
+        ", ".join(memory["searched_queries"])
+        if memory and memory["searched_queries"]
+        else "None."
+    )
+    context = "\n\n".join(observations[:3])
+
+    prompt = f"""You are an autonomous repository agent. The investigation is incomplete.
+
+User Goal:
+{user_query}
+
+What I already know:
+{known}
+
+Already searched (do NOT repeat):
+{searched}
+
+Current Evidence:
+{context}
+
+Generate a NEW investigation plan targeting MISSING information.
+
+Rules:
+- Maximum 3 steps
+- One step per line
+- Focus on missing information
+- Do not repeat already searched queries"""
+
+    response = generate_response(prompt)
     return response.split("\n")
 
 
+def self_correct(user_query: str, observations: list, memory: dict = None) -> dict:
+    known = (
+        "\n".join(memory["discovered_facts"])
+        if memory and memory["discovered_facts"]
+        else "Nothing yet."
+    )
+    context = "\n\n".join(observations[:5])
+
+    prompt = f"""You are a critical reviewer of a repository investigation.
+
+User Goal:
+{user_query}
+
+Known Facts:
+{known}
+
+Current Evidence:
+{context}
+
+Critically analyze this investigation. Identify:
+1. GAPS: What important information is still missing?
+2. CONTRADICTIONS: Are there any conflicting pieces of evidence?
+3. FOLLOW_UP: List 1-2 specific search queries that would fill the most critical gaps.
+
+Return in this exact format:
+GAPS: <comma-separated list, or "none">
+CONTRADICTIONS: <comma-separated list, or "none">
+FOLLOW_UP: <comma-separated search queries, or "none">"""
+
+    response = generate_response(prompt)
+
+    result = {"gaps": [], "contradictions": [], "follow_up_queries": []}
+
+    for line in response.strip().split("\n"):
+        line = line.strip()
+        if line.upper().startswith("GAPS:"):
+            value = line[5:].strip()
+            if value.lower() != "none":
+                result["gaps"] = [g.strip() for g in value.split(",") if g.strip()]
+        elif line.upper().startswith("CONTRADICTIONS:"):
+            value = line[15:].strip()
+            if value.lower() != "none":
+                result["contradictions"] = [
+                    c.strip() for c in value.split(",") if c.strip()
+                ]
+        elif line.upper().startswith("FOLLOW_UP:"):
+            value = line[10:].strip()
+            if value.lower() != "none":
+                result["follow_up_queries"] = [
+                    q.strip() for q in value.split(",") if q.strip()
+                ]
+
+    return result
+
+
 def repository_agent(user_query: str):
-
-    agent_memory = []
+    memory = {"discovered_facts": [], "searched_queries": []}
     observations = []
-    current_plan = generate_plan(user_query)
-    agent_memory.append("Generated initial plan")
-    max_iterations = 3
+    actions = []
 
-    for iteration in range(max_iterations):
-        agent_memory.append(f"Iteration {iteration+1}")
+    current_plan = generate_plan(user_query, memory)
+    actions.append("Generated initial plan")
+
+    for iteration in range(3):
+        actions.append(f"Iteration {iteration + 1}")
+
         for step in current_plan:
             step = step.strip()
             if not step:
                 continue
+
             tool_decision = choose_tool(step)
             try:
                 tool_name, tool_input = tool_decision.split(":", 1)
+                tool_input = tool_input.strip()
             except ValueError:
                 continue
 
-            agent_memory.append(f"Tool: {tool_name}")
+            if tool_input in memory["searched_queries"]:
+                actions.append(f"Skipped (already searched): {tool_input}")
+                continue
+
+            actions.append(f"Tool: {tool_name} | Input: {tool_input}")
+            memory["searched_queries"].append(tool_input)
+
             try:
                 if tool_name == "keyword_search":
                     repository_chunks = semantic_search(user_query)
@@ -137,38 +244,64 @@ def repository_agent(user_query: str):
                 else:
                     result = TOOLS[tool_name](tool_input)
             except Exception:
-                agent_memory.append("Tool execution failed")
+                actions.append("Tool execution failed")
                 continue
+
             observations.extend(result)
 
-        enough_information = reflect_on_observations(user_query, observations)
-        if enough_information:
-            agent_memory.append("Reflection: enough evidence")
-            break
-        else:
-            agent_memory.append("Reflection: replanning")
-            current_plan = replan(user_query, observations)
+            facts = extract_facts(step, result)
+            memory["discovered_facts"].extend(facts)
+            actions.append(f"Learned: {'; '.join(facts)}")
 
-    observations = list(set(observations))
-    context = "\n\n".join(observations[:8])
-    memory_context = "\n".join(agent_memory)
-    prompt = f"""
-        You are RepoGraph AI Agent.
+        critique = self_correct(user_query, observations, memory)
 
-        Actions Taken:
-        {memory_context}
+    if critique["gaps"]:
+        actions.append(f"Gaps: {'; '.join(critique['gaps'])}")
+    if critique["contradictions"]:
+        actions.append(f"Contradictions: {'; '.join(critique['contradictions'])}")
 
-        Repository Evidence:
-        {context}
+    for follow_up in critique["follow_up_queries"]:
+        follow_up = follow_up.strip()
+        if not follow_up or follow_up in memory["searched_queries"]:
+            continue
 
-        User Question:
-        {user_query}
+        actions.append(f"Self-correction search: {follow_up}")
+        memory["searched_queries"].append(follow_up)
 
-        Provide:
-        - implementation explanation
-        - architecture insights
-        - execution flow
-        """
+        try:
+            result = TOOLS["semantic_search"](follow_up)
+            observations.extend(result)
+            facts = extract_facts(follow_up, result)
+            memory["discovered_facts"].extend(facts)
+            actions.append(f"Correction learned: {'; '.join(facts)}")
+        except Exception:
+            actions.append(f"Self-correction search failed: {follow_up}")
+
+    enough = reflect_on_observations(user_query, observations, memory)
+    if enough:
+        actions.append("Reflection: enough evidence")
+    else:
+        actions.append("Reflection: replanning")
+        current_plan = replan(user_query, observations, memory)
+
+    known_facts = "\n".join(memory["discovered_facts"])
+    context = "\n\n".join(list(set(observations))[:8])
+
+    prompt = f"""You are RepoGraph AI Agent.
+
+Discovered Facts:
+{known_facts}
+
+Repository Evidence:
+{context}
+
+User Question:
+{user_query}
+
+Provide:
+- implementation explanation
+- architecture insights
+- execution flow"""
 
     response = generate_response(prompt)
-    return {"response": response, "actions": agent_memory}
+    return {"response": response, "actions": actions, "memory": memory}

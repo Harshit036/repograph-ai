@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: ankane/pgvector:latest
+        env:
+          POSTGRES_USER: repograph
+          POSTGRES_PASSWORD: repograph
+          POSTGRES_DB: repograph
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql+psycopg2://repograph:repograph@localhost:5432/repograph
+      API_KEY: test-key
+      OLLAMA_MODEL: qwen2.5-coder:7b
+      OLLAMA_BASE_URL: http://localhost:11434
+      EMBEDDING_MODEL: all-MiniLM-L6-v2
+      EMBEDDING_DIM: "384"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt pytest pytest-cov httpx
+
+      - name: Lint with ruff
+        run: |
+          pip install ruff
+          ruff check app/ tests/ --ignore E501
+
+      - name: Run tests
+        run: pytest tests/ -v --cov=app --cov-report=xml --cov-report=term-missing
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./coverage.xml
+          fail_ci_if_error: false
+        continue-on-error: true
