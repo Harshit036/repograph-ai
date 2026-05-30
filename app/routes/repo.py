@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Request
+import threading
+from fastapi import APIRouter
 from pydantic import BaseModel
 
 from app.core.config import get_settings
@@ -16,12 +17,15 @@ from app.services.llm_service import generate_response
 from app.storage.user_stores import clear_user_repo, get_graph, set_graph
 
 
-def _generate_repo_summary(repo_url: str, repository_data: list) -> str:
-    """Generate a concise repo summary using file names + function names as context."""
+router = APIRouter()
+
+
+def _generate_and_save_summary(database_url: str, user_id: str, repo_url: str,
+                                rid: str, repository_data: list) -> None:
+    """Run in a background thread — generate repo summary and update DB row."""
     try:
-        # Build a lightweight manifest — no full code, just structure
         lines = [f"Repository: {repo_url}", f"Total files: {len(repository_data)}", ""]
-        for f in repository_data[:30]:  # cap at 30 files to stay within token budget
+        for f in repository_data[:30]:
             fns = [c.get("function_name") for c in f.get("chunks", []) if c.get("function_name")]
             fn_str = ", ".join(fns[:8]) if fns else "(no functions)"
             lines.append(f"- {f['file_name']}: {fn_str}")
@@ -35,17 +39,31 @@ Repository manifest:
 {manifest}
 
 Summary:"""
-        return generate_response(prompt)
-    except Exception as e:
-        print(f"repo summary generation error: {e}")
-        return ""
+        summary = generate_response(prompt)
 
-router = APIRouter()
+        import psycopg2
+        url = database_url.replace("postgresql+psycopg2://", "")
+        user_pass, rest = url.split("@")
+        user, password = user_pass.split(":")
+        host_port, dbname = rest.split("/")
+        host, port = (host_port.split(":") + ["5432"])[:2]
+        conn = psycopg2.connect(host=host, port=int(port), dbname=dbname,
+                                user=user, password=password)
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE user_repos SET repo_summary = %s WHERE user_id = %s AND repo_id = %s",
+            (summary, user_id, rid)
+        )
+        conn.commit()
+        cur.close()
+        conn.close()
+        print(f"Repo summary saved for {repo_url}")
+    except Exception as e:
+        print(f"Background summary error: {e}")
 
 
 class RepoRequest(BaseModel):
     repo_url: str
-    # Optional user info forwarded from the frontend session
     github_login: str = ""
     avatar_url: str = ""
 
@@ -57,11 +75,9 @@ def ingest_repo(request: RepoRequest):
     rid      = repo_id_from_url(repo_url)
     settings = get_settings()
 
-    # Persist user record (no-op if already exists)
     if request.github_login:
         upsert_user(settings.database_url, user_id, request.github_login, request.avatar_url)
 
-    # Smart re-ingestion: check remote HEAD SHA before cloning
     remote_sha = get_remote_head_sha(repo_url)
     existing   = get_repo_entry(settings.database_url, user_id, rid)
 
@@ -73,11 +89,9 @@ def ingest_repo(request: RepoRequest):
             "files":       [],
         }
 
-    # New commits (or first ingest): clear old data for this user+repo
     delete_repo_embeddings(settings.database_url, user_id, rid)
     clear_user_repo(user_id, rid)
 
-    # Clone, scan, embed
     repo_path, is_temp = clone_repository(repo_url)
     try:
         repository_data = scan_repository(repo_path, user_id, rid, remote_sha or "")
@@ -87,14 +101,21 @@ def ingest_repo(request: RepoRequest):
         if is_temp:
             cleanup_repository(repo_path)
 
-    file_count   = len(repository_data)
-    chunk_count  = sum(len(f["chunks"]) for f in repository_data)
-    repo_summary = _generate_repo_summary(repo_url, repository_data)
+    file_count  = len(repository_data)
+    chunk_count = sum(len(f["chunks"]) for f in repository_data)
 
+    # Save without summary first so the response returns immediately
     upsert_repo_entry(
         settings.database_url, user_id, repo_url, rid,
-        remote_sha or "", file_count, chunk_count, repo_summary,
+        remote_sha or "", file_count, chunk_count, "",
     )
+
+    # Generate summary in background — doesn't block the response
+    threading.Thread(
+        target=_generate_and_save_summary,
+        args=(settings.database_url, user_id, repo_url, rid, repository_data),
+        daemon=True,
+    ).start()
 
     return {
         "skipped":     False,

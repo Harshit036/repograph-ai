@@ -59,7 +59,7 @@ export const api = {
 
   ingest: (repo_url: string, github_login = '', avatar_url = '') =>
     withHeaders(() =>
-      client.post('/ingest-repo', { repo_url, github_login, avatar_url }).then(r => r.data)
+      client.post('/ingest-repo', { repo_url, github_login, avatar_url }, { timeout: 600_000 }).then(r => r.data)
     ) as Promise<{
       skipped: boolean
       message?: string
