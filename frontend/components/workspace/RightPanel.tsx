@@ -240,7 +240,7 @@ function DetailView({
       </div>
 
       {/* Fullscreen plotly */}
-      {fullscreen && isPlotly && result?.data && (
+      {fullscreen && isPlotly && !!result?.data && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-surface border border-border rounded-2xl w-full max-w-5xl h-[82vh] flex flex-col">
             <div className="flex items-center justify-between px-5 py-3 border-b border-border flex-shrink-0">
