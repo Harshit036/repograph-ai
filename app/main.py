@@ -10,6 +10,7 @@ from app.routes.graph import router as graph_router
 from app.routes.flow import router as flow_router
 from app.routes.architecture import router as architecture_router
 from app.routes.onboarding import router as onboarding_router
+from app.routes.stats import router as stats_router
 
 
 @asynccontextmanager
@@ -38,3 +39,4 @@ app.include_router(graph_router)
 app.include_router(flow_router)
 app.include_router(architecture_router)
 app.include_router(onboarding_router)
+app.include_router(stats_router)
