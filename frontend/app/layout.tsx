@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import './globals.css'
-import Sidebar from '@/components/Sidebar'
+import Providers from '@/components/Providers'
 
 export const metadata: Metadata = {
   title: 'RepoGraph AI',
@@ -11,10 +11,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className="dark">
       <body className="bg-bg text-white">
-        <Sidebar />
-        <main className="ml-[220px] min-h-screen p-8">
-          {children}
-        </main>
+        <Providers>{children}</Providers>
       </body>
     </html>
   )

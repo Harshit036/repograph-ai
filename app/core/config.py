@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     ollama_model: str = "qwen2.5-coder:7b"
     ollama_base_url: str = "http://localhost:11434"
     groq_api_key: str = ""
-    groq_model: str = "llama3-70b-8192"
+    groq_model: str = "llama-3.3-70b-versatile"
 
     # Embeddings
     embedding_model: str = "all-MiniLM-L6-v2"
@@ -21,6 +21,7 @@ class Settings(BaseSettings):
 
     # Auth
     api_key: str = "changeme-dev-key"
+    nextauth_secret: str = ""           # NEXTAUTH_SECRET env var
 
     # App
     repo_base_path: str = "repositories"

@@ -18,7 +18,10 @@ from app.routes.tree import router as tree_router
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     from app.services.vector_db_service import init_db
+    from app.db.migrations import run_migrations
+    from app.core.config import get_settings
     init_db()
+    run_migrations(get_settings().database_url)
     yield
 
 

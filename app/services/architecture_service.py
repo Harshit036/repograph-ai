@@ -1,5 +1,6 @@
 import os
-from app.storage.repository_graph import repository_graph
+from app.core.user_context import get_user_id
+from app.storage.user_stores import get_graph
 from app.services.llm_service import generate_response
 
 
@@ -27,10 +28,11 @@ def format_graph_for_prompt(graph: dict, limit: int = 20) -> str:
 
 
 def generate_architecture_summary() -> dict:
-    if not repository_graph:
+    graph = get_graph(get_user_id())
+    if not graph:
         return {"summary": "No repository has been ingested yet."}
 
-    formatted = format_graph_for_prompt(repository_graph)
+    formatted = format_graph_for_prompt(graph)
 
     prompt = f"""You are a software architect reviewing a codebase.
 

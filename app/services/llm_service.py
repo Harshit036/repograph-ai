@@ -1,30 +1,70 @@
 from app.core.config import get_settings
+from app.core.llm_context import get_llm_config
+
+
+# Default models per provider (shown as suggestions in the UI)
+PROVIDER_DEFAULTS: dict[str, str] = {
+    "groq": "llama-3.3-70b-versatile",
+    "openai": "gpt-4o-mini",
+    "anthropic": "claude-haiku-4-5-20251001",
+    "ollama": "qwen2.5-coder:7b",
+}
 
 
 def generate_response(prompt: str) -> str:
+    """Generate an LLM response using per-request config (from X-LLM-* headers)
+    or fall back to server-side environment config."""
+    config = get_llm_config()
+
+    if config and config.provider:
+        return _langchain_response(prompt, config.provider, config.model, config.api_key)
+
+    # Fall back to env config
     settings = get_settings()
-
     if settings.llm_provider == "groq":
-        return _groq_response(prompt, settings)
-    return _ollama_response(prompt, settings)
+        return _langchain_response(prompt, "groq", settings.groq_model, settings.groq_api_key)
+    return _langchain_response(prompt, "ollama", settings.ollama_model, None)
 
 
-def _ollama_response(prompt: str, settings) -> str:
-    import ollama
-    client = ollama.Client(host=settings.ollama_base_url)
-    response = client.chat(
-        model=settings.ollama_model,
-        messages=[{"role": "user", "content": prompt}],
-    )
-    return response["message"]["content"]
+def _langchain_response(prompt: str, provider: str, model: str, api_key: str | None) -> str:
+    llm = _build_llm(provider, model, api_key)
+    from langchain_core.messages import HumanMessage
+    result = llm.invoke([HumanMessage(content=prompt)])
+    return result.content
 
 
-def _groq_response(prompt: str, settings) -> str:
-    from groq import Groq
-    client = Groq(api_key=settings.groq_api_key)
-    response = client.chat.completions.create(
-        model=settings.groq_model,
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.2,
-    )
-    return response.choices[0].message.content
+def _build_llm(provider: str, model: str, api_key: str | None):
+    settings = get_settings()
+    effective_model = model or PROVIDER_DEFAULTS.get(provider, "")
+
+    match provider:
+        case "groq":
+            from langchain_groq import ChatGroq
+            return ChatGroq(
+                model=effective_model,
+                api_key=api_key or settings.groq_api_key or None,
+                temperature=0.2,
+            )
+        case "openai":
+            from langchain_openai import ChatOpenAI
+            return ChatOpenAI(
+                model=effective_model,
+                api_key=api_key,
+                temperature=0.2,
+            )
+        case "anthropic":
+            from langchain_anthropic import ChatAnthropic
+            return ChatAnthropic(
+                model=effective_model,
+                api_key=api_key,
+                temperature=0.2,
+            )
+        case "ollama":
+            from langchain_ollama import ChatOllama
+            return ChatOllama(
+                model=effective_model,
+                base_url=settings.ollama_base_url,
+                temperature=0.2,
+            )
+        case _:
+            raise ValueError(f"Unknown LLM provider: {provider!r}")

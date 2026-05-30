@@ -1,6 +1,6 @@
 import os
-from app.storage.repository_graph import repository_graph
-from app.storage.chunk_store import chunk_store
+from app.core.user_context import get_user_id
+from app.storage.user_stores import get_graph, get_chunks
 
 # Colors by file extension (returned to frontend for consistent coloring)
 EXT_COLOR = {
@@ -17,9 +17,9 @@ EXT_COLOR = {
 }
 
 
-def _chunk_counts() -> dict[str, int]:
+def _chunk_counts(user_id: str) -> dict[str, int]:
     counts: dict[str, int] = {}
-    for item in chunk_store:
+    for item in get_chunks(user_id):
         fp = item.get("metadata", {}).get("file_path", "")
         if fp:
             counts[fp] = counts.get(fp, 0) + 1
@@ -28,11 +28,13 @@ def _chunk_counts() -> dict[str, int]:
 
 def build_tree() -> dict:
     """Build Plotly sunburst data from the in-memory repository graph."""
-    if not repository_graph:
+    user_id = get_user_id()
+    graph   = get_graph(user_id)
+    if not graph:
         return {}
 
-    counts = _chunk_counts()
-    paths  = list(repository_graph.keys())
+    counts = _chunk_counts(user_id)
+    paths  = list(graph.keys())
 
     # Find the common root up to the 'repositories' segment
     def rel_parts(fp: str) -> list[str]:
@@ -47,7 +49,7 @@ def build_tree() -> dict:
 
     for file_path in paths:
         parts = rel_parts(file_path)
-        func_count   = len(repository_graph[file_path].get("functions", []))
+        func_count   = len(graph[file_path].get("functions", []))
         chunk_count  = counts.get(file_path, 0)
 
         for depth, part in enumerate(parts):

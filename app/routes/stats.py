@@ -1,30 +1,27 @@
 from fastapi import APIRouter
-from app.storage.repository_graph import repository_graph
-from app.storage.chunk_store import chunk_store
+from app.core.user_context import get_user_id
+from app.storage.user_stores import get_graph, get_chunks
 
 router = APIRouter()
 
 
 @router.get("/stats")
 def get_stats():
-    files_count = len(repository_graph)
-    chunks_count = len(chunk_store)
+    user_id = get_user_id()
+    graph   = get_graph(user_id)
+    chunks  = get_chunks(user_id)
 
     repos = set()
-    for path in repository_graph:
+    for path in graph:
         parts = path.replace("\\", "/").split("/")
         if "repositories" in parts:
             idx = parts.index("repositories")
             if idx + 1 < len(parts):
                 repos.add(parts[idx + 1])
 
-    functions_count = sum(
-        len(node.get("functions", [])) for node in repository_graph.values()
-    )
-
     return {
-        "repos": len(repos),
-        "files": files_count,
-        "chunks": chunks_count,
-        "functions": functions_count,
+        "repos":     len(repos),
+        "files":     len(graph),
+        "chunks":    len(chunks),
+        "functions": sum(len(n.get("functions", [])) for n in graph.values()),
     }

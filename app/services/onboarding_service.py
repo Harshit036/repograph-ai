@@ -1,6 +1,7 @@
 import os
 from collections import Counter
-from app.storage.repository_graph import repository_graph
+from app.core.user_context import get_user_id
+from app.storage.user_stores import get_graph
 from app.services.llm_service import generate_response
 from app.services.architecture_service import format_graph_for_prompt
 
@@ -41,11 +42,12 @@ def compute_in_degree(graph: dict) -> dict:
 
 
 def generate_onboarding_guide() -> dict:
-    if not repository_graph:
+    graph = get_graph(get_user_id())
+    if not graph:
         return {"guide": "No repository has been ingested yet."}
 
-    entry_points = find_entry_points(repository_graph)
-    in_degree = compute_in_degree(repository_graph)
+    entry_points = find_entry_points(graph)
+    in_degree    = compute_in_degree(graph)
 
     top_core = sorted(in_degree.items(), key=lambda x: x[1], reverse=True)[:10]
 
@@ -58,7 +60,7 @@ def generate_onboarding_guide() -> dict:
         f"- {module} (imported {count} times)" for module, count in top_core
     )
 
-    structure = format_graph_for_prompt(repository_graph, limit=15)
+    structure = format_graph_for_prompt(graph, limit=15)
 
     prompt = f"""You are an engineering mentor onboarding a new developer to a codebase.
 
