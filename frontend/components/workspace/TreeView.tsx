@@ -1,5 +1,6 @@
 'use client'
 import { useRef, useEffect, useState } from 'react'
+import Tree from 'react-d3-tree'
 import { flatToD3Tree, D3TreeNode } from '@/lib/tree-to-d3'
 
 const EXT_COLOR: Record<string, string> = {
@@ -19,9 +20,7 @@ const EXT_COLOR: Record<string, string> = {
 export default function TreeView({ data }: { data: any }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [dimensions, setDimensions] = useState({ width: 600, height: 500 })
-  const [Tree, setTree] = useState<React.ComponentType<unknown> | null>(null)
 
-  // Measure container
   useEffect(() => {
     if (!containerRef.current) return
     const ro = new ResizeObserver(entries => {
@@ -32,25 +31,18 @@ export default function TreeView({ data }: { data: any }) {
     return () => ro.disconnect()
   }, [])
 
-  // Dynamically import react-d3-tree (it needs window)
-  useEffect(() => {
-    import('react-d3-tree').then(mod => {
-      setTree(() => mod.default)
-    })
-  }, [])
-
   if (!data?.ids) return <p className="text-xs text-muted p-4">No tree data available.</p>
 
   const treeData = flatToD3Tree(data)
 
   const renderNode = ({ nodeDatum }: { nodeDatum: D3TreeNode & { _isFile?: boolean; _ext?: string } }) => {
     const isFile = nodeDatum._isFile
-    const color = isFile ? (EXT_COLOR[nodeDatum._ext || ''] ?? '#52525b') : '#6b7280'
-    const radius = isFile ? 5 : 7
+    const color = isFile ? (EXT_COLOR[nodeDatum._ext ?? ''] ?? '#52525b') : '#6b7280'
+    const r = isFile ? 5 : 7
 
     return (
       <g>
-        <circle r={radius} fill={color} stroke={isFile ? color : '#374151'} strokeWidth={1.5} />
+        <circle r={r} fill={color} stroke={isFile ? color : '#374151'} strokeWidth={1.5} />
         <text
           x={isFile ? 10 : -10}
           textAnchor={isFile ? 'start' : 'end'}
@@ -70,28 +62,19 @@ export default function TreeView({ data }: { data: any }) {
 
   return (
     <div ref={containerRef} className="w-full h-full min-h-[400px] bg-zinc-950 rounded-xl border border-border overflow-hidden">
-      {Tree ? (
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        <Tree
-          data={treeData}
-          orientation="horizontal"
-          pathFunc="elbow"
-          translate={{ x: 60, y: dimensions.height / 2 }}
-          dimensions={dimensions}
-          separation={{ siblings: 0.5, nonSiblings: 0.6 }}
-          nodeSize={{ x: 200, y: 28 }}
-          renderCustomNodeElement={renderNode as never}
-          collapsible
-          initialDepth={2}
-          pathClassFunc={() => 'stroke-border'}
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          svgClassName="[&_path]:stroke-zinc-700 [&_path]:fill-none"
-        />
-      ) : (
-        <div className="flex items-center justify-center h-full">
-          <div className="w-5 h-5 border-2 border-accent border-t-transparent rounded-full animate-spin" />
-        </div>
-      )}
+      <Tree
+        data={treeData}
+        orientation="horizontal"
+        pathFunc="elbow"
+        translate={{ x: 60, y: dimensions.height / 2 }}
+        dimensions={dimensions}
+        separation={{ siblings: 0.5, nonSiblings: 0.6 }}
+        nodeSize={{ x: 200, y: 28 }}
+        renderCustomNodeElement={renderNode as never}
+        collapsible
+        initialDepth={2}
+        svgClassName="[&_path]:stroke-zinc-700 [&_path]:fill-none"
+      />
     </div>
   )
 }
