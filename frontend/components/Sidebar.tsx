@@ -3,7 +3,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
   LayoutDashboard, Upload, MessageSquare, Bot,
-  Network, Code2, BookOpen, GitBranch, Hexagon,
+  Network, Code2, BookOpen, GitBranch, Hexagon, TreePine,
 } from 'lucide-react'
 import clsx from 'clsx'
 
@@ -12,7 +12,8 @@ const nav = [
   { href: '/ingest',        label: 'Ingest',       icon: Upload },
   { href: '/query',         label: 'RAG Query',    icon: MessageSquare },
   { href: '/agent',         label: 'Agent',        icon: Bot },
-  { href: '/graph',         label: 'Graph',        icon: Network },
+  { href: '/graph',         label: 'Dep. Graph',   icon: Network },
+  { href: '/tree',          label: 'Repo Tree',    icon: TreePine },
   { href: '/architecture',  label: 'Architecture', icon: Code2 },
   { href: '/onboarding',    label: 'Onboarding',   icon: BookOpen },
   { href: '/trace',         label: 'Flow Trace',   icon: GitBranch },

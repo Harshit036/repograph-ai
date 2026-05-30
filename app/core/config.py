@@ -8,9 +8,12 @@ class Settings(BaseSettings):
     # Database
     database_url: str = "postgresql+psycopg2://repograph:repograph@localhost:5432/repograph"
 
-    # LLM
+    # LLM — set LLM_PROVIDER=groq to use Groq instead of Ollama
+    llm_provider: str = "ollama"          # "ollama" | "groq"
     ollama_model: str = "qwen2.5-coder:7b"
     ollama_base_url: str = "http://localhost:11434"
+    groq_api_key: str = ""
+    groq_model: str = "llama3-70b-8192"
 
     # Embeddings
     embedding_model: str = "all-MiniLM-L6-v2"

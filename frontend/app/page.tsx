@@ -5,7 +5,7 @@ import { api } from '@/lib/api'
 import {
   Database, FileCode2, Layers, FunctionSquare,
   Upload, MessageSquare, Bot, Network, Code2, BookOpen, GitBranch,
-  ArrowRight, Activity,
+  ArrowRight, Activity, TreePine,
 } from 'lucide-react'
 
 interface Stats { repos: number; files: number; chunks: number; functions: number }
@@ -32,7 +32,8 @@ const quickActions = [
   { href: '/ingest',       label: 'Ingest a Repo',   desc: 'Clone & index a GitHub repository',   icon: Upload,       color: 'text-violet-400' },
   { href: '/query',        label: 'RAG Query',        desc: 'Ask questions grounded in code',       icon: MessageSquare, color: 'text-blue-400' },
   { href: '/agent',        label: 'Run Agent',        desc: 'LangGraph multi-step reasoning',       icon: Bot,          color: 'text-emerald-400' },
-  { href: '/graph',        label: '3D Graph',         desc: 'Interactive dependency visualization', icon: Network,      color: 'text-amber-400' },
+  { href: '/graph',        label: 'Dep. Graph',        desc: 'Interactive 3D dependency graph',      icon: Network,      color: 'text-amber-400' },
+  { href: '/tree',         label: 'Repo Tree',         desc: 'Sunburst file tree by chunk density',  icon: TreePine,     color: 'text-teal-400' },
   { href: '/architecture', label: 'Architecture',     desc: 'Auto-generated architecture overview', icon: Code2,        color: 'text-pink-400' },
   { href: '/onboarding',   label: 'Onboarding Guide', desc: 'New-dev guide with entry points',     icon: BookOpen,     color: 'text-cyan-400' },
   { href: '/trace',        label: 'Flow Trace',       desc: 'Trace call chains by keyword',         icon: GitBranch,    color: 'text-orange-400' },

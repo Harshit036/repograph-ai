@@ -52,4 +52,6 @@ export const api = {
     client.get('/trace-flow', { params: { keyword } }).then(r => r.data) as Promise<
       { function: string; file: string; calls: string[] }[]
     >,
+
+  tree: () => client.get('/repository-tree').then(r => r.data),
 }
