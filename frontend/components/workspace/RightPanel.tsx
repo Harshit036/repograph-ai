@@ -208,7 +208,7 @@ function DetailView({
           </div>
         )}
 
-        {result?.data && !result.loading && (
+        {!!result?.data && !result.loading && (
           <>
             {tool.id === 'onboarding' && <OnboardingContent data={result.data} />}
 
