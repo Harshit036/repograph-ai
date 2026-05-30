@@ -103,7 +103,7 @@ def _should_continue(state: AgentState) -> str:
 
 # ── Public API ─────────────────────────────────────────────────────────────────
 
-def run(user_query: str) -> dict:
+def run(user_query: str, history: list[dict] | None = None) -> dict:
     """Run the multi-agent investigation graph. Returns response + trace."""
     graph = StateGraph(AgentState)
 
@@ -126,6 +126,7 @@ def run(user_query: str) -> dict:
 
     initial: AgentState = {
         "query": user_query,
+        "history": history or [],
         "memory": {"discovered_facts": [], "searched_queries": []},
         "observations": [],
         "actions": [],

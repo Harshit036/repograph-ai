@@ -9,6 +9,8 @@ const client = axios.create({
   timeout: 120_000,
 })
 
+export interface ChatMessage { role: 'user' | 'assistant'; content: string }
+
 // Read LLM config from Zustand localStorage persistence
 function getLLMHeaders(): Record<string, string> {
   if (typeof window === 'undefined') return {}
@@ -70,14 +72,55 @@ export const api = {
       { repo_url: string; repo_id: string; commit_sha: string; file_count: number; chunk_count: number; ingested_at: string }[]
     >,
 
-  ragQuery: (query: string) =>
-    withHeaders(() => client.post('/rag-query', { query }).then(r => r.data), true) as Promise<{
+  ragQuery: (query: string, messages: ChatMessage[] = []) =>
+    withHeaders(() => client.post('/rag-query', { query, messages }).then(r => r.data), true) as Promise<{
       response: string
-      citations: { source_id: number; file: string; file_path: string; preview: string }[]
+      citations: { source_id: number; file: string; file_path: string; preview: string; chunk_text?: string }[]
     }>,
 
-  agentQuery: (query: string) =>
-    withHeaders(() => client.post('/agent-query', { query }).then(r => r.data), true) as Promise<{
+  ragQueryStream: (
+    query: string,
+    messages: ChatMessage[],
+    onToken: (t: string) => void,
+    onDone: (citations: { source_id: number; file: string; file_path: string; preview: string; chunk_text?: string }[]) => void,
+    onError: (e: string) => void,
+  ): Promise<void> => {
+    const headers: Record<string, string> = {
+      'X-API-Key': API_KEY,
+      'Content-Type': 'application/json',
+      ...getLLMHeaders(),
+      ...getUserHeader(),
+    }
+    return fetch(`${API_URL}/rag-query/stream`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ query, messages }),
+    }).then(async res => {
+      if (!res.ok || !res.body) { onError('Stream request failed'); return }
+      const reader = res.body.getReader()
+      const dec = new TextDecoder()
+      let buf = ''
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buf += dec.decode(value, { stream: true })
+        const lines = buf.split('\n')
+        buf = lines.pop() ?? ''
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue
+          try {
+            const evt = JSON.parse(line.slice(6))
+            if (evt.type === 'token') onToken(evt.content)
+            else if (evt.type === 'citations') onDone(evt.data)
+            else if (evt.type === 'error') onError(evt.content)
+          } catch { /* skip malformed */ }
+        }
+      }
+    })
+  },
+
+  agentQuery: (query: string, messages: ChatMessage[] = []) =>
+    withHeaders(() => client.post('/agent-query', { query, messages }).then(r => r.data), true) as Promise<{
       response: string
       actions: string[]
       memory: { discovered_facts: string[]; searched_queries: string[] }

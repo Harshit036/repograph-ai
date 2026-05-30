@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react'
 import { useSession, signOut } from 'next-auth/react'
 import { Settings, GitBranch, LogOut, ChevronDown } from 'lucide-react'
+import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels'
 import LeftPanel from '@/components/workspace/LeftPanel'
 import CenterPanel from '@/components/workspace/CenterPanel'
 import RightPanel from '@/components/workspace/RightPanel'
@@ -91,12 +92,20 @@ export default function WorkspacePage() {
         </div>
       </header>
 
-      {/* Three-panel body */}
-      <div className="flex flex-1 min-h-0 overflow-hidden">
-        <LeftPanel />
-        <CenterPanel />
-        <RightPanel />
-      </div>
+      {/* Three-panel body — resizable */}
+      <PanelGroup direction="horizontal" className="flex-1 min-h-0 overflow-hidden">
+        <Panel defaultSize={22} minSize={16} maxSize={35}>
+          <LeftPanel />
+        </Panel>
+        <PanelResizeHandle className="w-1 bg-border hover:bg-accent/50 transition-colors cursor-col-resize flex-shrink-0" />
+        <Panel defaultSize={50} minSize={30}>
+          <CenterPanel />
+        </Panel>
+        <PanelResizeHandle className="w-1 bg-border hover:bg-accent/50 transition-colors cursor-col-resize flex-shrink-0" />
+        <Panel defaultSize={28} minSize={20} maxSize={45}>
+          <RightPanel />
+        </Panel>
+      </PanelGroup>
 
       {showSettings && <LLMSettingsModal onClose={() => setShowSettings(false)} />}
     </div>

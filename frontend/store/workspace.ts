@@ -29,10 +29,11 @@ export interface Message {
   id: string
   role: 'user' | 'assistant'
   content: string
-  citations?: { source_id: number; file: string; file_path: string; preview: string }[]
+  citations?: { source_id: number; file: string; file_path: string; preview: string; chunk_text?: string }[]
   actions?: string[]
   memory?: { discovered_facts: string[]; searched_queries: string[] }
   error?: boolean
+  streaming?: boolean
 }
 
 export type ToolTab = 'onboarding' | 'architecture' | 'tree' | 'graph' | 'trace'
@@ -72,6 +73,7 @@ export interface WorkspaceState {
   setRepoHistory: (history: UserRepo[]) => void
   setIngestionStatus: (s: WorkspaceState['ingestionStatus'], error?: string) => void
   addMessage: (msg: Message) => void
+  updateMessage: (id: string, patch: Partial<Message>) => void
   clearMessages: () => void
   setChatMode: (mode: ChatMode) => void
   setLLMConfig: (cfg: Partial<LLMConfig>) => void
@@ -102,6 +104,8 @@ export const useWorkspace = create<WorkspaceState>()(
       setIngestionStatus: (ingestionStatus, error) =>
         set({ ingestionStatus, ingestionError: error ?? null }),
       addMessage: (msg) => set((s) => ({ messages: [...s.messages, msg] })),
+      updateMessage: (id, patch) =>
+        set((s) => ({ messages: s.messages.map(m => m.id === id ? { ...m, ...patch } : m) })),
       clearMessages: () => set({ messages: [] }),
       setChatMode: (chatMode) => set({ chatMode }),
       setLLMConfig: (cfg) =>

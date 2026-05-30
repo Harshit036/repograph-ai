@@ -53,7 +53,7 @@ export default function LeftPanel() {
   }
 
   return (
-    <aside className="w-[280px] flex-shrink-0 flex flex-col border-r border-border bg-surface overflow-y-auto">
+    <aside className="h-full flex flex-col border-r border-border bg-surface overflow-y-auto">
       {/* URL input */}
       <div className="p-4 border-b border-border space-y-3">
         <p className="text-xs font-semibold text-muted uppercase tracking-wider">Repository</p>

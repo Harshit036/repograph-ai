@@ -19,11 +19,29 @@ def generate_response(prompt: str) -> str:
     if config and config.provider:
         return _langchain_response(prompt, config.provider, config.model, config.api_key)
 
-    # Fall back to env config
     settings = get_settings()
     if settings.llm_provider == "groq":
         return _langchain_response(prompt, "groq", settings.groq_model, settings.groq_api_key)
     return _langchain_response(prompt, "ollama", settings.ollama_model, None)
+
+
+def stream_response(prompt: str):
+    """Yield LLM response tokens as a generator."""
+    config = get_llm_config()
+    settings = get_settings()
+
+    if config and config.provider:
+        provider, model, api_key = config.provider, config.model, config.api_key
+    elif settings.llm_provider == "groq":
+        provider, model, api_key = "groq", settings.groq_model, settings.groq_api_key
+    else:
+        provider, model, api_key = "ollama", settings.ollama_model, None
+
+    from langchain_core.messages import HumanMessage
+    llm = _build_llm(provider, model, api_key)
+    for chunk in llm.stream([HumanMessage(content=prompt)]):
+        if chunk.content:
+            yield chunk.content
 
 
 def _langchain_response(prompt: str, provider: str, model: str, api_key: str | None) -> str:

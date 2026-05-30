@@ -29,16 +29,21 @@ def run_migrations(database_url: str) -> None:
 
         cur.execute("""
             CREATE TABLE IF NOT EXISTS user_repos (
-                id          SERIAL PRIMARY KEY,
-                user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                repo_url    TEXT NOT NULL,
-                repo_id     TEXT NOT NULL,
-                commit_sha  TEXT,
-                file_count  INT  DEFAULT 0,
-                chunk_count INT  DEFAULT 0,
-                ingested_at TIMESTAMPTZ DEFAULT NOW(),
+                id           SERIAL PRIMARY KEY,
+                user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                repo_url     TEXT NOT NULL,
+                repo_id      TEXT NOT NULL,
+                commit_sha   TEXT,
+                file_count   INT  DEFAULT 0,
+                chunk_count  INT  DEFAULT 0,
+                repo_summary TEXT,
+                ingested_at  TIMESTAMPTZ DEFAULT NOW(),
                 UNIQUE(user_id, repo_id)
             )
+        """)
+        # Add repo_summary column if table already existed without it
+        cur.execute("""
+            ALTER TABLE user_repos ADD COLUMN IF NOT EXISTS repo_summary TEXT
         """)
 
         cur.execute("""
@@ -120,19 +125,21 @@ def get_repo_entry(database_url: str, user_id: str, repo_id: str) -> dict | None
 
 
 def upsert_repo_entry(database_url: str, user_id: str, repo_url: str, repo_id: str,
-                      commit_sha: str, file_count: int, chunk_count: int) -> None:
+                      commit_sha: str, file_count: int, chunk_count: int,
+                      repo_summary: str = "") -> None:
     try:
         conn = _get_conn(database_url)
         cur = conn.cursor()
         cur.execute("""
-            INSERT INTO user_repos (user_id, repo_url, repo_id, commit_sha, file_count, chunk_count)
-            VALUES (%s, %s, %s, %s, %s, %s)
+            INSERT INTO user_repos (user_id, repo_url, repo_id, commit_sha, file_count, chunk_count, repo_summary)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (user_id, repo_id) DO UPDATE
-              SET commit_sha  = EXCLUDED.commit_sha,
-                  file_count  = EXCLUDED.file_count,
-                  chunk_count = EXCLUDED.chunk_count,
-                  ingested_at = NOW()
-        """, (user_id, repo_url, repo_id, commit_sha, file_count, chunk_count))
+              SET commit_sha   = EXCLUDED.commit_sha,
+                  file_count   = EXCLUDED.file_count,
+                  chunk_count  = EXCLUDED.chunk_count,
+                  repo_summary = EXCLUDED.repo_summary,
+                  ingested_at  = NOW()
+        """, (user_id, repo_url, repo_id, commit_sha, file_count, chunk_count, repo_summary))
         conn.commit()
         cur.close()
         conn.close()

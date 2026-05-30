@@ -12,7 +12,33 @@ from app.services.repo_service import (
     cleanup_repository, clone_repository, get_remote_head_sha,
     repo_id_from_url, scan_repository,
 )
+from app.services.llm_service import generate_response
 from app.storage.user_stores import clear_user_repo, get_graph, set_graph
+
+
+def _generate_repo_summary(repo_url: str, repository_data: list) -> str:
+    """Generate a concise repo summary using file names + function names as context."""
+    try:
+        # Build a lightweight manifest — no full code, just structure
+        lines = [f"Repository: {repo_url}", f"Total files: {len(repository_data)}", ""]
+        for f in repository_data[:30]:  # cap at 30 files to stay within token budget
+            fns = [c.get("function_name") for c in f.get("chunks", []) if c.get("function_name")]
+            fn_str = ", ".join(fns[:8]) if fns else "(no functions)"
+            lines.append(f"- {f['file_name']}: {fn_str}")
+        manifest = "\n".join(lines)
+
+        prompt = f"""Summarise this software repository in 150-200 words for a code analysis assistant.
+Cover: what the project does, its main technology stack, key modules/services, and overall architecture pattern.
+Be specific and factual. Do not use markdown headers.
+
+Repository manifest:
+{manifest}
+
+Summary:"""
+        return generate_response(prompt)
+    except Exception as e:
+        print(f"repo summary generation error: {e}")
+        return ""
 
 router = APIRouter()
 
@@ -61,12 +87,13 @@ def ingest_repo(request: RepoRequest):
         if is_temp:
             cleanup_repository(repo_path)
 
-    file_count  = len(repository_data)
-    chunk_count = sum(len(f["chunks"]) for f in repository_data)
+    file_count   = len(repository_data)
+    chunk_count  = sum(len(f["chunks"]) for f in repository_data)
+    repo_summary = _generate_repo_summary(repo_url, repository_data)
 
     upsert_repo_entry(
         settings.database_url, user_id, repo_url, rid,
-        remote_sha or "", file_count, chunk_count,
+        remote_sha or "", file_count, chunk_count, repo_summary,
     )
 
     return {
