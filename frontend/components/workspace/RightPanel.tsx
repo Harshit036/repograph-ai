@@ -121,6 +121,30 @@ const TOOLS: ToolDef[] = [
   { id: 'trace',        label: 'Flow Tracer',           icon: GitBranch, description: 'Trace call chains and execution paths for any function or keyword', color: 'text-pink-400' },
 ]
 
+// ── Onboarding content ────────────────────────────────────────────────────────
+
+function OnboardingContent({ data }: { data: unknown }) {
+  const d = data as { guide: string; entry_points: { file: string; reasons: string[] }[] }
+  return (
+    <div className="space-y-4">
+      {d.entry_points?.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-[11px] font-semibold text-muted uppercase tracking-wider">Entry Points</p>
+          {d.entry_points.map((ep, i) => (
+            <div key={i} className="bg-s2 border border-border rounded-lg p-3">
+              <p className="text-xs font-mono text-violet-400 truncate">{ep.file}</p>
+              {ep.reasons.map((r, j) => (
+                <p key={j} className="text-[11px] text-zinc-400 mt-1 leading-relaxed">• {r}</p>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+      {d.guide && <MdContent text={d.guide} />}
+    </div>
+  )
+}
+
 // ── Detail view (opened from a card) ──────────────────────────────────────────
 
 function DetailView({
@@ -186,25 +210,7 @@ function DetailView({
 
         {result?.data && !result.loading && (
           <>
-            {tool.id === 'onboarding' && (() => {
-              const d = result.data as { guide: string; entry_points: { file: string; reasons: string[] }[] }
-              return (
-                <div className="space-y-4">
-                  {d.entry_points?.length > 0 && (
-                    <div className="space-y-2">
-                      <p className="text-[11px] font-semibold text-muted uppercase tracking-wider">Entry Points</p>
-                      {d.entry_points.map((ep, i) => (
-                        <div key={i} className="bg-s2 border border-border rounded-lg p-3">
-                          <p className="text-xs font-mono text-violet-400 truncate">{ep.file}</p>
-                          {ep.reasons.map((r, j) => <p key={j} className="text-[11px] text-zinc-400 mt-1 leading-relaxed">• {r}</p>)}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  {d.guide && <MdContent text={d.guide} />}
-                </div>
-              )
-            })()}
+            {tool.id === 'onboarding' && <OnboardingContent data={result.data} />}
 
             {tool.id === 'architecture' && (
               <MdContent text={(result.data as { summary: string }).summary} />
