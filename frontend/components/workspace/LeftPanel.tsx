@@ -24,7 +24,7 @@ export default function LeftPanel() {
         setRepoHistory(repos)
         if (!currentRepo && repos.length > 0) {
           const latest = repos[0]
-          setCurrentRepo({ url: latest.repo_url, totalFiles: latest.file_count, files: [] })
+          setCurrentRepo({ url: latest.repo_url, totalFiles: latest.file_count, totalChunks: latest.chunk_count, files: [] })
         }
       })
       .catch(() => {})
@@ -43,13 +43,13 @@ export default function LeftPanel() {
 
       if (data.skipped) {
         setIngestionStatus('skipped')
-        // Restore the existing repo info from history
         const hist = repoHistory.find(r => r.repo_url === trimmed)
         if (hist) {
-          setCurrentRepo({ url: trimmed, totalFiles: hist.file_count, files: [] })
+          setCurrentRepo({ url: trimmed, totalFiles: hist.file_count, totalChunks: hist.chunk_count, files: [] })
         }
       } else {
-        setCurrentRepo({ url: trimmed, totalFiles: data.total_files, files: data.files })
+        const totalChunks = data.files.reduce((a: number, f: { total_chunks: number }) => a + f.total_chunks, 0)
+        setCurrentRepo({ url: trimmed, totalFiles: data.total_files, totalChunks, files: data.files })
         setIngestionStatus('done')
         // Refresh history
         api.myRepos().then(setRepoHistory).catch(() => {})
@@ -113,7 +113,7 @@ export default function LeftPanel() {
           <p className="text-xs text-muted font-mono truncate">{currentRepo.url.replace('https://', '')}</p>
           <div className="grid grid-cols-2 gap-2">
             <StatPill icon={FileCode2} label="Files"  value={currentRepo.totalFiles} color="text-blue-400" />
-            <StatPill icon={Layers}    label="Chunks" value={currentRepo.files.reduce((a, f) => a + f.total_chunks, 0)} color="text-emerald-400" />
+            <StatPill icon={Layers}    label="Chunks" value={currentRepo.totalChunks ?? currentRepo.files.reduce((a, f) => a + f.total_chunks, 0)} color="text-emerald-400" />
           </div>
           {currentRepo.files.length > 0 && (
             <div className="space-y-0.5 max-h-40 overflow-y-auto mt-1">

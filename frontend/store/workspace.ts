@@ -11,6 +11,7 @@ export interface LLMConfig {
 export interface RepoInfo {
   url: string
   totalFiles: number
+  totalChunks: number
   files: { file_name: string; total_chunks: number }[]
 }
 
