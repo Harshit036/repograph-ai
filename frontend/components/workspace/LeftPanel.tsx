@@ -16,13 +16,20 @@ export default function LeftPanel() {
   const { data: session } = useSession()
   const [url, setUrl] = useState('')
 
-  // Load repo history on mount
+  // Load repo history on mount; auto-restore most recent repo so chat is ready immediately
   useEffect(() => {
     if (!session?.user?.id) return
     api.myRepos()
-      .then(setRepoHistory)
+      .then(repos => {
+        setRepoHistory(repos)
+        if (!currentRepo && repos.length > 0) {
+          const latest = repos[0]
+          setCurrentRepo({ url: latest.repo_url, totalFiles: latest.file_count, files: [] })
+        }
+      })
       .catch(() => {})
-  }, [session?.user?.id, setRepoHistory])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.user?.id])
 
   const handleIngest = async (repoUrl?: string) => {
     const trimmed = (repoUrl ?? url).trim()

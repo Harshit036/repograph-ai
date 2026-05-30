@@ -41,10 +41,9 @@ def run_migrations(database_url: str) -> None:
                 UNIQUE(user_id, repo_id)
             )
         """)
-        # Add repo_summary column if table already existed without it
-        cur.execute("""
-            ALTER TABLE user_repos ADD COLUMN IF NOT EXISTS repo_summary TEXT
-        """)
+        # Add columns if table already existed without them
+        cur.execute("ALTER TABLE user_repos ADD COLUMN IF NOT EXISTS repo_summary TEXT")
+        cur.execute("ALTER TABLE user_repos ADD COLUMN IF NOT EXISTS graph_data  JSONB")
 
         cur.execute("""
             CREATE INDEX IF NOT EXISTS idx_embedding_user_repo
@@ -145,6 +144,46 @@ def upsert_repo_entry(database_url: str, user_id: str, repo_url: str, repo_id: s
         conn.close()
     except Exception as e:
         print(f"upsert_repo_entry error: {e}")
+
+
+def save_graph_for_user(database_url: str, user_id: str, graph_data: dict) -> None:
+    """Merge and persist the in-memory graph into each user_repos row for this user."""
+    import json
+    try:
+        conn = _get_conn(database_url)
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE user_repos SET graph_data = %s WHERE user_id = %s",
+            (json.dumps(graph_data), user_id)
+        )
+        conn.commit()
+        cur.close()
+        conn.close()
+    except Exception as e:
+        print(f"save_graph_for_user error: {e}")
+
+
+def load_graph_for_user(user_id: str) -> dict:
+    """Load the most recent persisted graph for a user."""
+    import json
+    try:
+        from app.core.config import get_settings
+        database_url = get_settings().database_url
+        conn = _get_conn(database_url)
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT graph_data FROM user_repos WHERE user_id = %s AND graph_data IS NOT NULL ORDER BY ingested_at DESC LIMIT 1",
+            (user_id,)
+        )
+        row = cur.fetchone()
+        cur.close()
+        conn.close()
+        if row and row[0]:
+            return row[0] if isinstance(row[0], dict) else json.loads(row[0])
+        return {}
+    except Exception as e:
+        print(f"load_graph_for_user error: {e}")
+        return {}
 
 
 def delete_repo_embeddings(database_url: str, user_id: str, repo_id: str) -> None:

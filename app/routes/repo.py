@@ -6,7 +6,7 @@ from app.core.config import get_settings
 from app.core.user_context import get_user_id
 from app.db.migrations import (
     delete_repo_embeddings, get_repo_entry, get_user_repos,
-    upsert_repo_entry, upsert_user,
+    upsert_repo_entry, upsert_user, save_graph_for_user,
 )
 from app.services.graph_service import build_repository_graph
 from app.services.repo_service import (
@@ -96,7 +96,10 @@ def ingest_repo(request: RepoRequest):
     try:
         repository_data = scan_repository(repo_path, user_id, rid, remote_sha or "")
         graph_data = build_repository_graph(repository_data)
-        set_graph(user_id, {**get_graph(user_id), **graph_data})
+        merged_graph = {**get_graph(user_id), **graph_data}
+        set_graph(user_id, merged_graph)
+        # Persist graph to DB so it survives container restarts
+        save_graph_for_user(settings.database_url, user_id, merged_graph)
     finally:
         if is_temp:
             cleanup_repository(repo_path)
