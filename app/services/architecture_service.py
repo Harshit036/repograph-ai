@@ -30,7 +30,7 @@ def format_graph_for_prompt(graph: dict, limit: int = 20) -> str:
 def generate_architecture_summary() -> dict:
     graph = get_graph(get_user_id())
     if not graph:
-        return {"summary": "No repository has been ingested yet."}
+        return {"summary": "⚠️ Graph data is not available. Please click **Analyze** on your repository in the left panel to rebuild the index."}
 
     formatted = format_graph_for_prompt(graph)
 

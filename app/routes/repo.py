@@ -135,3 +135,34 @@ def my_repos():
     user_id  = get_user_id()
     settings = get_settings()
     return get_user_repos(settings.database_url, user_id)
+
+
+@router.delete("/repo/{repo_id}")
+def delete_repo(repo_id: str):
+    user_id  = get_user_id()
+    settings = get_settings()
+    # Remove embeddings from pgvector
+    delete_repo_embeddings(settings.database_url, user_id, repo_id)
+    # Remove from user_repos table
+    _delete_repo_row(settings.database_url, user_id, repo_id)
+    # Clear in-memory stores
+    clear_user_repo(user_id, repo_id)
+    return {"deleted": True}
+
+
+def _delete_repo_row(database_url: str, user_id: str, repo_id: str) -> None:
+    import psycopg2
+    try:
+        url = database_url.replace("postgresql+psycopg2://", "")
+        user_pass, rest = url.split("@")
+        user, password = user_pass.split(":")
+        host_port, dbname = rest.split("/")
+        host, port = (host_port.split(":") + ["5432"])[:2]
+        conn = psycopg2.connect(host=host, port=int(port), dbname=dbname, user=user, password=password)
+        cur = conn.cursor()
+        cur.execute("DELETE FROM user_repos WHERE user_id = %s AND repo_id = %s", (user_id, repo_id))
+        conn.commit()
+        cur.close()
+        conn.close()
+    except Exception as e:
+        print(f"delete_repo_row error: {e}")

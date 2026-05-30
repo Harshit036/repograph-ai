@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react'
 import { useSession } from 'next-auth/react'
 import {
   Github, Upload, CheckCircle, AlertCircle, FileCode2,
-  Layers, Loader2, Clock, RefreshCw,
+  Layers, Loader2, RefreshCw, Trash2,
 } from 'lucide-react'
 import { api } from '@/lib/api'
 import { useWorkspace } from '@/store/workspace'
@@ -11,8 +11,9 @@ import { useWorkspace } from '@/store/workspace'
 export default function LeftPanel() {
   const {
     currentRepo, ingestionStatus, ingestionError,
-    repoHistory, setCurrentRepo, setIngestionStatus, setRepoHistory,
+    repoHistory, setCurrentRepo, setIngestionStatus, setRepoHistory, deleteRepo,
   } = useWorkspace()
+  const [deletingId, setDeletingId] = useState<string | null>(null)
   const { data: session } = useSession()
   const [url, setUrl] = useState('')
 
@@ -30,6 +31,20 @@ export default function LeftPanel() {
       .catch(() => {})
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.user?.id])
+
+  const handleDelete = async (e: React.MouseEvent, repoId: string) => {
+    e.stopPropagation()
+    if (!confirm('Remove this repository and all its data?')) return
+    setDeletingId(repoId)
+    try {
+      await api.deleteRepo(repoId)
+      deleteRepo(repoId)
+    } catch {
+      // silently ignore — row may already be gone
+    } finally {
+      setDeletingId(null)
+    }
+  }
 
   const handleIngest = async (repoUrl?: string) => {
     const trimmed = (repoUrl ?? url).trim()
@@ -139,27 +154,46 @@ export default function LeftPanel() {
           {repoHistory.map((r) => {
             const isActive = currentRepo?.url === r.repo_url
             const name = r.repo_url.split('/').slice(-2).join('/')
+            const isDeleting = deletingId === r.repo_id
             return (
-              <button
+              <div
                 key={r.repo_id}
-                onClick={() => handleIngest(r.repo_url)}
-                disabled={ingestionStatus === 'loading'}
-                className={`w-full flex items-start gap-2.5 p-2.5 rounded-lg border text-left transition-all group ${
-                  isActive
-                    ? 'border-accent/40 bg-accent/5'
-                    : 'border-border hover:border-muted bg-s2/50'
+                className={`w-full flex items-start gap-2.5 p-2.5 rounded-lg border transition-all group ${
+                  isActive ? 'border-accent/40 bg-accent/5' : 'border-border hover:border-muted bg-s2/50'
                 }`}
               >
-                <Github className="w-3.5 h-3.5 text-muted flex-shrink-0 mt-0.5" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-mono text-zinc-300 truncate">{name}</p>
-                  <div className="flex items-center gap-2 mt-0.5">
-                    <FileCode2 className="w-2.5 h-2.5 text-muted" />
-                    <span className="text-[10px] text-muted">{r.file_count} files</span>
+                <button
+                  onClick={() => handleIngest(r.repo_url)}
+                  disabled={ingestionStatus === 'loading' || isDeleting}
+                  className="flex items-start gap-2.5 flex-1 min-w-0 text-left"
+                >
+                  <Github className="w-3.5 h-3.5 text-muted flex-shrink-0 mt-0.5" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-mono text-zinc-300 truncate">{name}</p>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <FileCode2 className="w-2.5 h-2.5 text-muted" />
+                      <span className="text-[10px] text-muted">{r.file_count} files · {r.chunk_count} chunks</span>
+                    </div>
                   </div>
+                </button>
+                <div className="flex items-center gap-1 flex-shrink-0 mt-0.5">
+                  {!isDeleting && (
+                    <RefreshCw className="w-3 h-3 text-muted opacity-0 group-hover:opacity-60 transition-opacity cursor-pointer hover:text-white"
+                      onClick={() => handleIngest(r.repo_url)} />
+                  )}
+                  <button
+                    onClick={(e) => handleDelete(e, r.repo_id)}
+                    disabled={isDeleting}
+                    className="opacity-0 group-hover:opacity-100 transition-opacity text-muted hover:text-danger disabled:cursor-not-allowed"
+                    title="Delete repository"
+                  >
+                    {isDeleting
+                      ? <Loader2 className="w-3 h-3 animate-spin" />
+                      : <Trash2 className="w-3 h-3" />
+                    }
+                  </button>
                 </div>
-                <RefreshCw className="w-3 h-3 text-muted opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 mt-0.5" />
-              </button>
+              </div>
             )
           })}
         </div>

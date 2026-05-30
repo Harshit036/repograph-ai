@@ -198,7 +198,7 @@ export default function CenterPanel() {
   }
 
   return (
-    <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+    <div className="h-full flex flex-col min-w-0 overflow-hidden">
       {/* Top bar */}
       <div className="flex items-center justify-between px-5 py-3 border-b border-border bg-surface/50 backdrop-blur-sm flex-shrink-0">
         <div className="flex items-center gap-1 bg-s2 rounded-lg p-1">

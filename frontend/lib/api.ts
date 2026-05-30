@@ -67,6 +67,9 @@ export const api = {
       files: { file_name: string; total_chunks: number }[]
     }>,
 
+  deleteRepo: (repoId: string) =>
+    withHeaders(() => client.delete(`/repo/${repoId}`).then(r => r.data)) as Promise<{ deleted: boolean }>,
+
   myRepos: () =>
     withHeaders(() => client.get('/my-repos').then(r => r.data)) as Promise<
       { repo_url: string; repo_id: string; commit_sha: string; file_count: number; chunk_count: number; ingested_at: string }[]

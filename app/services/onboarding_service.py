@@ -44,7 +44,10 @@ def compute_in_degree(graph: dict) -> dict:
 def generate_onboarding_guide() -> dict:
     graph = get_graph(get_user_id())
     if not graph:
-        return {"guide": "No repository has been ingested yet."}
+        return {
+            "guide": "⚠️ Graph data is not available. Please click **Analyze** on your repository in the left panel to rebuild the index.",
+            "entry_points": [],
+        }
 
     entry_points = find_entry_points(graph)
     in_degree    = compute_in_degree(graph)

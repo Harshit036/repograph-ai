@@ -80,6 +80,7 @@ export interface WorkspaceState {
   setLLMConfig: (cfg: Partial<LLMConfig>) => void
   setActiveToolTab: (tab: ToolTab) => void
   setToolResult: (tab: ToolTab, result: ToolResult) => void
+  deleteRepo: (repoId: string) => void
 }
 
 export const useWorkspace = create<WorkspaceState>()(
@@ -114,6 +115,13 @@ export const useWorkspace = create<WorkspaceState>()(
       setActiveToolTab: (activeToolTab) => set({ activeToolTab }),
       setToolResult: (tab, result) =>
         set((s) => ({ toolResults: { ...s.toolResults, [tab]: result } })),
+      deleteRepo: (repoId) =>
+        set((s) => ({
+          repoHistory: s.repoHistory.filter(r => r.repo_id !== repoId),
+          currentRepo: s.currentRepo && s.repoHistory.find(r => r.repo_id === repoId)?.repo_url === s.currentRepo.url
+            ? null
+            : s.currentRepo,
+        })),
     }),
     {
       name: 'repograph-workspace',
