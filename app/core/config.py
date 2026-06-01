@@ -19,6 +19,11 @@ class Settings(BaseSettings):
     embedding_model: str = "all-MiniLM-L6-v2"
     embedding_dim: int = 384
 
+    # Neo4j
+    neo4j_uri: str = "bolt://localhost:7687"
+    neo4j_user: str = "neo4j"
+    neo4j_password: str = "repograph123"
+
     # Auth
     api_key: str = "changeme-dev-key"
     nextauth_secret: str = ""           # NEXTAUTH_SECRET env var

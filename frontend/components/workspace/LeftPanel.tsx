@@ -25,7 +25,7 @@ export default function LeftPanel() {
         setRepoHistory(repos)
         if (!currentRepo && repos.length > 0) {
           const latest = repos[0]
-          setCurrentRepo({ url: latest.repo_url, totalFiles: latest.file_count, totalChunks: latest.chunk_count, files: [] })
+          setCurrentRepo({ url: latest.repo_url, repoId: latest.repo_id, totalFiles: latest.file_count, totalChunks: latest.chunk_count, files: [] })
         }
       })
       .catch(() => {})
@@ -60,14 +60,19 @@ export default function LeftPanel() {
         setIngestionStatus('skipped')
         const hist = repoHistory.find(r => r.repo_url === trimmed)
         if (hist) {
-          setCurrentRepo({ url: trimmed, totalFiles: hist.file_count, totalChunks: hist.chunk_count, files: [] })
+          setCurrentRepo({ url: trimmed, repoId: hist.repo_id, totalFiles: hist.file_count, totalChunks: hist.chunk_count, files: [] })
         }
       } else {
         const totalChunks = data.files.reduce((a: number, f: { total_chunks: number }) => a + f.total_chunks, 0)
-        setCurrentRepo({ url: trimmed, totalFiles: data.total_files, totalChunks, files: data.files })
         setIngestionStatus('done')
-        // Refresh history
-        api.myRepos().then(setRepoHistory).catch(() => {})
+        // Refresh history then set currentRepo so repoId is available
+        api.myRepos().then(repos => {
+          setRepoHistory(repos)
+          const match = repos.find((r: { repo_url: string; repo_id: string }) => r.repo_url === trimmed)
+          setCurrentRepo({ url: trimmed, repoId: match?.repo_id ?? '', totalFiles: data.total_files, totalChunks, files: data.files })
+        }).catch(() => {
+          setCurrentRepo({ url: trimmed, repoId: '', totalFiles: data.total_files, totalChunks, files: data.files })
+        })
       }
     } catch (e: unknown) {
       setIngestionStatus('error', e instanceof Error ? e.message : 'Ingestion failed')

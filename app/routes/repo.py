@@ -6,35 +6,40 @@ from app.core.config import get_settings
 from app.core.user_context import get_user_id
 from app.db.migrations import (
     delete_repo_embeddings, get_repo_entry, get_user_repos,
-    upsert_repo_entry, upsert_user, save_graph_for_user,
+    upsert_repo_entry, upsert_user,
 )
-from app.services.graph_service import build_repository_graph
+from app.services.graph_service import build_repository_graph, write_graph_to_neo4j
+from app.services.orientation_service import read_orientation_data, build_orientation_context
 from app.services.repo_service import (
     cleanup_repository, clone_repository, get_remote_head_sha,
     repo_id_from_url, scan_repository,
 )
 from app.services.llm_service import generate_response
-from app.storage.user_stores import clear_user_repo, get_graph, set_graph
+from app.storage.user_stores import clear_user_repo
 
 
 router = APIRouter()
 
 
 def _generate_and_save_summary(database_url: str, user_id: str, repo_url: str,
-                                rid: str, repository_data: list) -> None:
+                                rid: str, repository_data: list,
+                                orientation_data: dict | None = None) -> None:
     """Run in a background thread — generate repo summary and update DB row."""
     try:
+        orientation_context = build_orientation_context(orientation_data) if orientation_data else ""
+
         lines = [f"Repository: {repo_url}", f"Total files: {len(repository_data)}", ""]
         for f in repository_data[:30]:
-            fns = [c.get("function_name") for c in f.get("chunks", []) if c.get("function_name")]
+            fns = [c.get("name") for c in f.get("chunks", []) if c.get("name")]
             fn_str = ", ".join(fns[:8]) if fns else "(no functions)"
             lines.append(f"- {f['file_name']}: {fn_str}")
         manifest = "\n".join(lines)
 
+        context_block = f"\n{orientation_context}\n" if orientation_context else ""
         prompt = f"""Summarise this software repository in 150-200 words for a code analysis assistant.
 Cover: what the project does, its main technology stack, key modules/services, and overall architecture pattern.
 Be specific and factual. Do not use markdown headers.
-
+{context_block}
 Repository manifest:
 {manifest}
 
@@ -94,12 +99,14 @@ def ingest_repo(request: RepoRequest):
 
     repo_path, is_temp = clone_repository(repo_url)
     try:
+        # Phase 1: orientation pass before full scan
+        orientation_data = read_orientation_data(repo_path)
+
         repository_data = scan_repository(repo_path, user_id, rid, remote_sha or "")
+
+        # Build graph, persist to Neo4j (replaces JSONB approach)
         graph_data = build_repository_graph(repository_data)
-        merged_graph = {**get_graph(user_id), **graph_data}
-        set_graph(user_id, merged_graph)
-        # Persist graph to DB so it survives container restarts
-        save_graph_for_user(settings.database_url, user_id, merged_graph)
+        write_graph_to_neo4j(user_id, rid, graph_data)
     finally:
         if is_temp:
             cleanup_repository(repo_path)
@@ -107,16 +114,16 @@ def ingest_repo(request: RepoRequest):
     file_count  = len(repository_data)
     chunk_count = sum(len(f["chunks"]) for f in repository_data)
 
-    # Save without summary first so the response returns immediately
+    # Save DB row immediately (empty summary) so the response returns fast
     upsert_repo_entry(
         settings.database_url, user_id, repo_url, rid,
         remote_sha or "", file_count, chunk_count, "",
     )
 
-    # Generate summary in background — doesn't block the response
+    # Generate richer summary in background using orientation context
     threading.Thread(
         target=_generate_and_save_summary,
-        args=(settings.database_url, user_id, repo_url, rid, repository_data),
+        args=(settings.database_url, user_id, repo_url, rid, repository_data, orientation_data),
         daemon=True,
     ).start()
 

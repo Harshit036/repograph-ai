@@ -13,15 +13,18 @@ from app.routes.architecture import router as architecture_router
 from app.routes.onboarding import router as onboarding_router
 from app.routes.stats import router as stats_router
 from app.routes.tree import router as tree_router
+from app.routes.analysis import router as analysis_router
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     from app.services.vector_db_service import init_db
     from app.db.migrations import run_migrations
+    from app.db.neo4j import create_indexes
     from app.core.config import get_settings
     init_db()
     run_migrations(get_settings().database_url)
+    create_indexes()
     yield
 
 
@@ -53,3 +56,4 @@ app.include_router(architecture_router)
 app.include_router(onboarding_router)
 app.include_router(stats_router)
 app.include_router(tree_router)
+app.include_router(analysis_router)

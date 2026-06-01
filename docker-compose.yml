@@ -16,6 +16,26 @@ services:
       timeout: 5s
       retries: 10
 
+  # Local Neo4j — only starts with: docker compose --profile local-neo4j up
+  # Leave this out when using Neo4j AuraDB (cloud).
+  neo4j:
+    image: neo4j:5.20-community
+    environment:
+      NEO4J_AUTH: neo4j/repograph123
+      NEO4J_server_default__listen__address: 0.0.0.0
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    volumes:
+      - neo4j_data:/data
+    healthcheck:
+      test: ["CMD", "cypher-shell", "-u", "neo4j", "-p", "repograph123", "RETURN 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+    profiles:
+      - local-neo4j
+
   api:
     build:
       context: .
@@ -26,6 +46,11 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-repograph}:${POSTGRES_PASSWORD:-repograph}@postgres:5432/${POSTGRES_DB:-repograph}
       OLLAMA_BASE_URL: http://host.docker.internal:11434
+      # Neo4j — read from .env (NEO4J_URI / NEO4J_USER / NEO4J_PASSWORD).
+      # Defaults below are for local dev without a cloud account.
+      NEO4J_URI: ${NEO4J_URI:-bolt://localhost:7687}
+      NEO4J_USER: ${NEO4J_USER:-neo4j}
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD:-repograph123}
     volumes:
       - ./repositories:/app/repositories
     depends_on:
@@ -61,4 +86,5 @@ services:
 
 volumes:
   pgdata:
+  neo4j_data:
   ollama_models:

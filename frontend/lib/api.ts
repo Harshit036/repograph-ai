@@ -150,4 +150,18 @@ export const api = {
 
   tree: () =>
     withHeaders(() => client.get('/repository-tree').then(r => r.data)),
+
+  deadCode: (repoId?: string) =>
+    withHeaders(() => client.get('/dead-code', { params: repoId ? { repo_id: repoId } : {} }).then(r => r.data), true) as Promise<{
+      total: number
+      by_file: { file: string; functions: { name: string; line: number }[] }[]
+      message: string
+    }>,
+
+  testCoverage: (repoId?: string) =>
+    withHeaders(() => client.get('/test-coverage', { params: repoId ? { repo_id: repoId } : {} }).then(r => r.data), true) as Promise<{
+      total: number
+      by_file: { file: string; functions: { name: string; line: number }[] }[]
+      message: string
+    }>,
 }

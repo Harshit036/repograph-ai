@@ -1,6 +1,7 @@
 import os
 from app.core.user_context import get_user_id
-from app.storage.user_stores import get_graph, get_chunks
+from app.storage.user_stores import get_chunks
+from app.services.graph_retrieval_service import get_active_graph
 
 # Colors by file extension (returned to frontend for consistent coloring)
 EXT_COLOR = {
@@ -27,9 +28,9 @@ def _chunk_counts(user_id: str) -> dict[str, int]:
 
 
 def build_tree() -> dict:
-    """Build Plotly sunburst data from the in-memory repository graph."""
+    """Build Plotly sunburst data from the repository graph."""
     user_id = get_user_id()
-    graph   = get_graph(user_id)
+    graph   = get_active_graph(user_id, limit=500)
     if not graph:
         return {}
 

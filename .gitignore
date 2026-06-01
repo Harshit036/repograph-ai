@@ -1,6 +1,26 @@
 venv/
 .env
 __pycache__/
+*.pyc
+*.pyo
+*.pyd
 repositories/
 chroma_db/
 .DS_Store
+
+# Knowledge / internal notes (not for repo)
+knowledge.md
+
+# Frontend build artifacts
+frontend/node_modules/
+frontend/.next/
+frontend/tsconfig.tsbuildinfo
+frontend/.env.local
+
+# Python
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/

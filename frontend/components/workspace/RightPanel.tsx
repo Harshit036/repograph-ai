@@ -6,7 +6,7 @@ import rehypeHighlight from 'rehype-highlight'
 import {
   BookOpen, Code2, TreePine, Network, GitBranch,
   Loader2, AlertCircle, Search, X, ChevronLeft,
-  Sparkles, Play,
+  Sparkles, Play, Bug, TestTube2, ChevronDown, ChevronRight,
 } from 'lucide-react'
 import { api } from '@/lib/api'
 import { graphToPlotly } from '@/lib/graph-to-plotly'
@@ -114,11 +114,13 @@ interface ToolDef {
 }
 
 const TOOLS: ToolDef[] = [
-  { id: 'onboarding',   label: 'Onboarding Guide',     icon: BookOpen,  description: 'Entry points, setup steps, and key modules for new contributors', color: 'text-emerald-400' },
-  { id: 'architecture', label: 'Architecture Summary',  icon: Code2,     description: 'AI-generated overview of layers, patterns, and design decisions',  color: 'text-blue-400' },
-  { id: 'tree',         label: 'File Tree',             icon: TreePine,  description: 'Visual sunburst of the repository file structure and sizes',        color: 'text-amber-400' },
-  { id: 'graph',        label: '3D Dependency Graph',   icon: Network,   description: 'Interactive 3D graph of imports, calls, and module relationships',  color: 'text-violet-400' },
-  { id: 'trace',        label: 'Flow Tracer',           icon: GitBranch, description: 'Trace call chains and execution paths for any function or keyword', color: 'text-pink-400' },
+  { id: 'onboarding',   label: 'Onboarding Guide',    icon: BookOpen,   description: 'Entry points, setup steps, and key modules for new contributors', color: 'text-emerald-400' },
+  { id: 'architecture', label: 'Architecture Summary', icon: Code2,      description: 'AI-generated overview of layers, patterns, and design decisions',  color: 'text-blue-400' },
+  { id: 'tree',         label: 'File Tree',            icon: TreePine,   description: 'Visual sunburst of the repository file structure and sizes',        color: 'text-amber-400' },
+  { id: 'graph',        label: '3D Dependency Graph',  icon: Network,    description: 'Interactive 3D graph of imports, calls, and module relationships',  color: 'text-violet-400' },
+  { id: 'trace',        label: 'Flow Tracer',          icon: GitBranch,  description: 'Trace call chains and execution paths for any function or keyword', color: 'text-pink-400' },
+  { id: 'deadcode',     label: 'Dead Code Finder',     icon: Bug,        description: 'Functions with no incoming calls — potential dead code to remove',  color: 'text-red-400' },
+  { id: 'testcoverage', label: 'Test Coverage',        icon: TestTube2,  description: 'Production functions with no corresponding test coverage',          color: 'text-orange-400' },
 ]
 
 // ── Onboarding content ────────────────────────────────────────────────────────
@@ -141,6 +143,68 @@ function OnboardingContent({ data }: { data: unknown }) {
         </div>
       )}
       {d.guide && <MdContent text={d.guide} />}
+    </div>
+  )
+}
+
+// ── Dead code / Test coverage view ────────────────────────────────────────────
+
+interface AnalysisResult {
+  total: number
+  by_file: { file: string; functions: { name: string; line: number }[] }[]
+  message: string
+}
+
+function AnalysisView({ data }: { data: unknown }) {
+  const d = data as AnalysisResult
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+
+  const toggle = (file: string) =>
+    setExpanded(prev => {
+      const next = new Set(prev)
+      next.has(file) ? next.delete(file) : next.add(file)
+      return next
+    })
+
+  return (
+    <div className="space-y-3">
+      <div className={`rounded-lg p-3 border text-xs leading-relaxed ${
+        d.total === 0
+          ? 'bg-success/10 border-success/30 text-success'
+          : 'bg-warning/10 border-warning/30 text-warning'
+      }`}>
+        {d.message}
+      </div>
+
+      {d.by_file?.map(({ file, functions }) => (
+        <div key={file} className="bg-s2 border border-border rounded-lg overflow-hidden">
+          <button
+            onClick={() => toggle(file)}
+            className="w-full flex items-center gap-2 p-3 text-left hover:bg-s2/80 transition-colors"
+          >
+            {expanded.has(file)
+              ? <ChevronDown className="w-3 h-3 text-muted flex-shrink-0" />
+              : <ChevronRight className="w-3 h-3 text-muted flex-shrink-0" />
+            }
+            <p className="text-xs font-mono text-zinc-300 truncate flex-1">{file}</p>
+            <span className="text-[10px] text-muted bg-surface px-1.5 py-0.5 rounded-full flex-shrink-0">
+              {functions.length}
+            </span>
+          </button>
+          {expanded.has(file) && (
+            <div className="border-t border-border px-4 pb-3 pt-2 space-y-1">
+              {functions.map((fn, i) => (
+                <div key={i} className="flex items-center gap-1.5">
+                  <span className="text-[11px] font-mono text-violet-400">{fn.name}</span>
+                  {fn.line > 0 && (
+                    <span className="text-[10px] text-muted">:{fn.line}</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
     </div>
   )
 }
@@ -225,6 +289,10 @@ function DetailView({
               <div className="rounded-xl overflow-hidden border border-border">
                 <PlotContainer plotData={result.data} height={380} />
               </div>
+            )}
+
+            {(tool.id === 'deadcode' || tool.id === 'testcoverage') && (
+              <AnalysisView data={result.data} />
             )}
           </>
         )}
@@ -334,11 +402,13 @@ export default function RightPanel() {
     try {
       let data: unknown
       switch (tab) {
-        case 'onboarding':   data = await api.onboarding(); break
-        case 'architecture': data = await api.architecture(); break
-        case 'tree':         data = await api.tree(); break           // raw flat-tree data → TreeView
-        case 'graph':        data = graphToPlotly(await api.graph()); break  // plotly format → PlotContainer
-        default:             data = null
+        case 'onboarding':    data = await api.onboarding(); break
+        case 'architecture':  data = await api.architecture(); break
+        case 'tree':          data = await api.tree(); break
+        case 'graph':         data = graphToPlotly(await api.graph()); break
+        case 'deadcode':      data = await api.deadCode(currentRepo?.repoId); break
+        case 'testcoverage':  data = await api.testCoverage(currentRepo?.repoId); break
+        default:              data = null
       }
       setToolResult(tab, { loading: false, data })
     } catch (e: unknown) {

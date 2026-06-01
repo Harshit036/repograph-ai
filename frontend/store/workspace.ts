@@ -10,6 +10,7 @@ export interface LLMConfig {
 
 export interface RepoInfo {
   url: string
+  repoId: string
   totalFiles: number
   totalChunks: number
   files: { file_name: string; total_chunks: number }[]
@@ -37,7 +38,7 @@ export interface Message {
   streaming?: boolean
 }
 
-export type ToolTab = 'onboarding' | 'architecture' | 'tree' | 'graph' | 'trace'
+export type ToolTab = 'onboarding' | 'architecture' | 'tree' | 'graph' | 'trace' | 'deadcode' | 'testcoverage'
 
 export interface ToolResult {
   loading: boolean

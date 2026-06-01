@@ -1,39 +1,44 @@
 import os
 from app.core.user_context import get_user_id
-from app.storage.user_stores import get_graph
+from app.services.graph_retrieval_service import get_active_graph
 from app.services.llm_service import generate_response
 
 
 def format_graph_for_prompt(graph: dict, limit: int = 20) -> str:
     scored = []
     for file_path, node in graph.items():
-        func_count = len(node.get("functions", []))
-        if func_count > 0:
-            scored.append((file_path, node, func_count))
+        funcs = node.get("functions", [])
+        # functions may be strings (Neo4j) or dicts (legacy) — normalise to strings
+        func_names = [f if isinstance(f, str) else f.get("name", "") for f in funcs]
+        if func_names:
+            scored.append((file_path, node, func_names))
 
-    scored.sort(key=lambda x: x[2], reverse=True)
-    top_files = scored[:limit]
+    scored.sort(key=lambda x: len(x[2]), reverse=True)
 
     lines = []
-    for file_path, node, _ in top_files:
-        name = os.path.relpath(file_path)
-        functions = ", ".join(node.get("functions", []))
+    for file_path, node, func_names in scored[:limit]:
+        name    = os.path.relpath(file_path) if file_path != "unknown" else file_path
         imports = ", ".join(set(node.get("imports", [])))
-        lines.append(f"File: {name}")
-        lines.append(f"  Functions: {functions}")
-        lines.append(f"  Imports: {imports}")
-        lines.append("")
-
+        lines += [
+            f"File: {name}",
+            f"  Functions: {', '.join(func_names)}",
+            f"  Imports: {imports}",
+            "",
+        ]
     return "\n".join(lines)
 
 
 def generate_architecture_summary() -> dict:
-    graph = get_graph(get_user_id())
+    graph = get_active_graph(get_user_id())
     if not graph:
-        return {"summary": "⚠️ Graph data is not available. Please click **Analyze** on your repository in the left panel to rebuild the index."}
+        return {
+            "summary": (
+                "⚠️ Graph data is not available. "
+                "Please click **Analyze** on your repository in the left panel to rebuild the index."
+            )
+        }
 
     formatted = format_graph_for_prompt(graph)
-
     prompt = f"""You are a software architect reviewing a codebase.
 
 Given the repository structure below, provide:
@@ -46,5 +51,4 @@ Repository structure:
 
 Write a clear, concise architecture summary."""
 
-    summary = generate_response(prompt)
-    return {"summary": summary}
+    return {"summary": generate_response(prompt)}

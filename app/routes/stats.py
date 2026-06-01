@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 from app.core.user_context import get_user_id
-from app.storage.user_stores import get_graph, get_chunks
+from app.storage.user_stores import get_chunks
+from app.services.graph_retrieval_service import get_active_graph
 
 router = APIRouter()
 
@@ -8,7 +9,7 @@ router = APIRouter()
 @router.get("/stats")
 def get_stats():
     user_id = get_user_id()
-    graph   = get_graph(user_id)
+    graph   = get_active_graph(user_id)
     chunks  = get_chunks(user_id)
 
     repos = set()

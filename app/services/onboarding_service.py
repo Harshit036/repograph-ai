@@ -1,7 +1,7 @@
 import os
 from collections import Counter
 from app.core.user_context import get_user_id
-from app.storage.user_stores import get_graph
+from app.services.graph_retrieval_service import get_active_graph
 from app.services.llm_service import generate_response
 from app.services.architecture_service import format_graph_for_prompt
 
@@ -11,22 +11,27 @@ def find_entry_points(graph: dict) -> list:
 
     for file_path, node in graph.items():
         reasons = []
-        functions = node.get("functions", [])
+        # functions may be strings (Neo4j) or dicts (legacy) — normalise
+        func_names = [
+            f if isinstance(f, str) else f.get("name", "")
+            for f in node.get("functions", [])
+        ]
         imports = node.get("imports", [])
 
-        if "main" in functions:
+        if "main" in func_names:
             reasons.append("has main function")
-        if "__main__" in functions:
+        if "__main__" in func_names:
             reasons.append("has __main__ block")
-        if len(imports) <= 2 and len(functions) > 0:
+        if len(imports) <= 2 and func_names:
             reasons.append("minimal dependencies")
-        if "APIRouter" in str(node.get("imports", [])):
+        if "APIRouter" in str(imports):
             reasons.append("route entry point")
 
         if reasons:
-            entry_points.append(
-                {"file": os.path.relpath(file_path), "reasons": reasons}
-            )
+            entry_points.append({
+                "file": os.path.relpath(file_path) if file_path != "unknown" else file_path,
+                "reasons": reasons,
+            })
 
     return entry_points
 
@@ -34,7 +39,7 @@ def find_entry_points(graph: dict) -> list:
 def compute_in_degree(graph: dict) -> dict:
     counter = Counter()
 
-    for file_path, node in graph.items():
+    for _, node in graph.items():
         for imp in node.get("imports", []):
             counter[imp] += 1
 
@@ -42,7 +47,7 @@ def compute_in_degree(graph: dict) -> dict:
 
 
 def generate_onboarding_guide() -> dict:
-    graph = get_graph(get_user_id())
+    graph = get_active_graph(get_user_id())
     if not graph:
         return {
             "guide": "⚠️ Graph data is not available. Please click **Analyze** on your repository in the left panel to rebuild the index.",
