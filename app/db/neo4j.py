@@ -242,11 +242,31 @@ def get_graph_for_summary(user_id: str, repo_id: str, limit: int = 20) -> dict:
         return {}
 
 
+def count_repo_nodes(user_id: str, repo_id: str) -> int:
+    """Return total number of graph nodes for this repo (0 = no graph built yet)."""
+    try:
+        with get_driver().session() as session:
+            result = session.run(
+                "MATCH (n {user_id: $uid, repo_id: $rid}) RETURN count(n) AS cnt",
+                uid=user_id, rid=repo_id,
+            )
+            row = result.single()
+            return row["cnt"] if row else 0
+    except Exception as e:
+        logger.warning("count_repo_nodes error: %s", e)
+        return 0
+
+
 def get_dead_functions(user_id: str, repo_id: str) -> list[dict]:
     """Functions in the repo with no incoming CALLS edges — potential dead code."""
     _SKIP = [
         "__init__", "__str__", "__repr__", "__len__", "__eq__", "__hash__",
         "__enter__", "__exit__", "main", "setUp", "tearDown",
+    ]
+    _SKIP_PATHS = [
+        "node_modules", "/venv/", "/.venv/", "site-packages",
+        "__pycache__", "/dist/", "/build/", "/vendor/", "/.tox/",
+        ".egg-info", "/eggs/",
     ]
     try:
         with get_driver().session() as session:
@@ -258,10 +278,11 @@ def get_dead_functions(user_id: str, repo_id: str) -> list[dict]:
                   AND f.file_path <> "unknown"
                   AND NOT ()-[:CALLS]->(f)
                   AND NOT f.name IN $skip
+                  AND NOT any(p IN $skip_paths WHERE f.file_path CONTAINS p)
                 RETURN f.name AS name, f.file_path AS file_path, f.start_line AS line
                 ORDER BY f.file_path, f.name
                 """,
-                uid=user_id, rid=repo_id, skip=_SKIP,
+                uid=user_id, rid=repo_id, skip=_SKIP, skip_paths=_SKIP_PATHS,
             )
             return [dict(r) for r in result]
     except Exception as e:
@@ -271,6 +292,11 @@ def get_dead_functions(user_id: str, repo_id: str) -> list[dict]:
 
 def get_untested_functions(user_id: str, repo_id: str) -> list[dict]:
     """Production functions not called by any test function."""
+    _SKIP_PATHS = [
+        "node_modules", "/venv/", "/.venv/", "site-packages",
+        "__pycache__", "/dist/", "/build/", "/vendor/", "/.tox/",
+        ".egg-info", "/eggs/",
+    ]
     try:
         with get_driver().session() as session:
             result = session.run(
@@ -280,10 +306,11 @@ def get_untested_functions(user_id: str, repo_id: str) -> list[dict]:
                   AND f.file_path IS NOT NULL
                   AND f.file_path <> "unknown"
                   AND NOT (:Function {is_test: true, user_id: $uid, repo_id: $rid})-[:CALLS]->(f)
+                  AND NOT any(p IN $skip_paths WHERE f.file_path CONTAINS p)
                 RETURN f.name AS name, f.file_path AS file_path, f.start_line AS line
                 ORDER BY f.file_path, f.name
                 """,
-                uid=user_id, rid=repo_id,
+                uid=user_id, rid=repo_id, skip_paths=_SKIP_PATHS,
             )
             return [dict(r) for r in result]
     except Exception as e:

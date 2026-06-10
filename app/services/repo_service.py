@@ -11,7 +11,16 @@ from app.services.vector_db_service import store_chunk
 from app.services.chunking_service import chunk_file
 from app.storage.user_stores import get_chunks
 
-SUPPORTED_EXTENSIONS = [".py", ".js", ".ts", ".java", ".kt", ".cpp", ".c", ".go"]
+SUPPORTED_EXTENSIONS = [".py", ".js", ".ts", ".java", ".kt", ".cpp", ".c", ".go",
+                        ".jsx", ".tsx", ".rs", ".rb", ".php", ".swift", ".cs", ".md"]
+
+_LANG_MAP = {
+    ".py": "python", ".js": "javascript", ".jsx": "javascript",
+    ".ts": "typescript", ".tsx": "typescript", ".go": "go",
+    ".java": "java", ".kt": "kotlin", ".rs": "rust", ".rb": "ruby",
+    ".php": "php", ".swift": "swift", ".cs": "csharp",
+    ".cpp": "cpp", ".c": "c", ".md": "markdown",
+}
 IGNORE_DIRECTORIES   = ["node_modules", ".git", "dist", "build", "__pycache__", ".venv", "venv"]
 
 
@@ -20,11 +29,21 @@ def repo_id_from_url(repo_url: str) -> str:
     return hashlib.sha256(repo_url.strip().lower().encode()).hexdigest()[:16]
 
 
-def get_remote_head_sha(repo_url: str) -> str | None:
+def _inject_token(repo_url: str, token: str) -> str:
+    """Inject a GitHub token into a HTTPS URL for private repo access."""
+    from urllib.parse import urlparse, urlunparse
+    parsed = urlparse(repo_url)
+    if parsed.scheme in ("http", "https") and token:
+        return urlunparse(parsed._replace(netloc=f"{token}@{parsed.netloc}"))
+    return repo_url
+
+
+def get_remote_head_sha(repo_url: str, github_token: str = "") -> str | None:
     """Check the remote HEAD commit SHA without cloning (fast)."""
     try:
+        authed_url = _inject_token(repo_url, github_token)
         result = subprocess.run(
-            ["git", "ls-remote", repo_url, "HEAD"],
+            ["git", "ls-remote", authed_url, "HEAD"],
             capture_output=True, text=True, timeout=15,
         )
         if result.returncode == 0 and result.stdout.strip():
@@ -34,9 +53,10 @@ def get_remote_head_sha(repo_url: str) -> str | None:
     return None
 
 
-def clone_repository(repo_url: str) -> tuple[str, bool]:
+def clone_repository(repo_url: str, github_token: str = "") -> tuple[str, bool]:
     tmp = tempfile.mkdtemp(prefix="repograph_")
-    Repo.clone_from(repo_url, tmp)
+    authed_url = _inject_token(repo_url, github_token)
+    Repo.clone_from(authed_url, tmp)
     return tmp, True
 
 
@@ -48,13 +68,18 @@ def cleanup_repository(path: str) -> None:
 
 
 def scan_repository(repo_path: str, user_id: str, repo_id: str, commit_sha: str) -> list:
+    from app.db.migrations import bulk_insert_repo_files
+    from app.core.config import get_settings
+
     repository_data = []
     chunks = get_chunks(user_id)
+    file_records: list[dict] = []
 
     for root, dirs, files in os.walk(repo_path):
         dirs[:] = [d for d in dirs if d not in IGNORE_DIRECTORIES]
         for file in files:
-            if not any(file.endswith(ext) for ext in SUPPORTED_EXTENSIONS):
+            ext = os.path.splitext(file)[1].lower()
+            if ext not in SUPPORTED_EXTENSIONS:
                 continue
 
             file_path = os.path.join(root, file)
@@ -62,7 +87,9 @@ def scan_repository(repo_path: str, user_id: str, repo_id: str, commit_sha: str)
                 with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
                     content = f.read()
 
-                ext = os.path.splitext(file)[1]
+                language = _LANG_MAP.get(ext, "text")
+                file_records.append({"file_path": file_path, "content": content, "language": language})
+
                 file_chunks = chunk_file(content, ext)
 
                 if file_chunks:
@@ -75,6 +102,8 @@ def scan_repository(repo_path: str, user_id: str, repo_id: str, commit_sha: str)
                             "user_id":    user_id,
                             "repo_id":    repo_id,
                             "commit_sha": commit_sha or "",
+                            "start_line": chunk.get("start_line", 0),
+                            "end_line":   chunk.get("end_line", 0),
                         }
                         store_chunk(chunk_id=chunk_id, embedding=embedding,
                                     content=chunk["content"], metadata=metadata)
@@ -88,5 +117,11 @@ def scan_repository(repo_path: str, user_id: str, repo_id: str, commit_sha: str)
                 })
             except Exception as e:
                 print(f"Failed to read {file_path}: {e}")
+
+    # Persist full file contents for Code Explorer
+    try:
+        bulk_insert_repo_files(get_settings().database_url, user_id, repo_id, file_records)
+    except Exception as e:
+        print(f"bulk_insert_repo_files error: {e}")
 
     return repository_data

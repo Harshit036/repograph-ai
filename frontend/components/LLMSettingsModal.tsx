@@ -1,6 +1,6 @@
 'use client'
-import { useState } from 'react'
-import { X, Settings, ChevronDown } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { X, Settings, ChevronDown, Loader2, RefreshCw } from 'lucide-react'
 import { useWorkspace } from '@/store/workspace'
 
 const PROVIDERS = [
@@ -10,21 +10,45 @@ const PROVIDERS = [
   { id: 'ollama',    label: 'Ollama',    hint: 'Local — requires Ollama running', models: ['qwen2.5-coder:7b', 'llama3.2', 'deepseek-coder-v2'] },
 ]
 
-interface Props {
-  onClose: () => void
-}
+interface Props { onClose: () => void }
 
 export default function LLMSettingsModal({ onClose }: Props) {
   const { llmConfig, setLLMConfig } = useWorkspace()
   const [local, setLocal] = useState({ ...llmConfig })
   const [showKey, setShowKey] = useState(false)
+  const [ollamaModels, setOllamaModels] = useState<string[]>([])
+  const [ollamaLoading, setOllamaLoading] = useState(false)
 
   const selectedProvider = PROVIDERS.find(p => p.id === local.provider) ?? PROVIDERS[0]
+  const modelList = local.provider === 'ollama' && ollamaModels.length > 0
+    ? ollamaModels
+    : selectedProvider.models
 
-  const save = () => {
-    setLLMConfig(local)
-    onClose()
+  // Auto-fetch Ollama models when provider is ollama
+  useEffect(() => {
+    if (local.provider !== 'ollama') return
+    fetchOllamaModels()
+  }, [local.provider])
+
+  const fetchOllamaModels = async () => {
+    setOllamaLoading(true)
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+      // We proxy through our API to avoid CORS on direct Ollama call
+      const res = await fetch(`${apiUrl}/ollama/models`, {
+        headers: { 'X-API-Key': process.env.NEXT_PUBLIC_API_KEY || 'changeme-dev-key' },
+      })
+      if (res.ok) {
+        const data = await res.json()
+        if (data.models?.length) {
+          setOllamaModels(data.models)
+        }
+      }
+    } catch { /* Ollama may not be running — fall back to default list */ }
+    finally { setOllamaLoading(false) }
   }
+
+  const save = () => { setLLMConfig(local); onClose() }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
@@ -46,15 +70,13 @@ export default function LLMSettingsModal({ onClose }: Props) {
             <label className="text-xs font-medium text-muted uppercase tracking-wide">Provider</label>
             <div className="grid grid-cols-2 gap-2">
               {PROVIDERS.map(p => (
-                <button
-                  key={p.id}
+                <button key={p.id}
                   onClick={() => setLocal(l => ({ ...l, provider: p.id, model: p.models[0] }))}
                   className={`flex flex-col items-start px-3 py-2.5 rounded-lg border text-left transition-all ${
                     local.provider === p.id
                       ? 'border-accent bg-accent/10 text-white'
                       : 'border-border bg-s2 text-muted hover:border-muted'
-                  }`}
-                >
+                  }`}>
                   <span className="text-sm font-medium">{p.label}</span>
                   <span className="text-xs mt-0.5 opacity-70">{p.hint}</span>
                 </button>
@@ -64,24 +86,26 @@ export default function LLMSettingsModal({ onClose }: Props) {
 
           {/* Model */}
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-muted uppercase tracking-wide">Model</label>
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-medium text-muted uppercase tracking-wide">Model</label>
+              {local.provider === 'ollama' && (
+                <button onClick={fetchOllamaModels} disabled={ollamaLoading}
+                  className="flex items-center gap-1 text-[10px] text-muted hover:text-white transition-colors">
+                  {ollamaLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                  Refresh models
+                </button>
+              )}
+            </div>
             <div className="relative">
-              <select
-                value={local.model}
-                onChange={e => setLocal(l => ({ ...l, model: e.target.value }))}
-                className="w-full bg-s2 border border-border text-white rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-accent appearance-none pr-8"
-              >
-                {selectedProvider.models.map(m => (
-                  <option key={m} value={m}>{m}</option>
-                ))}
-                <option value={local.model}>{local.model}</option>
+              <select value={local.model} onChange={e => setLocal(l => ({ ...l, model: e.target.value }))}
+                className="w-full bg-s2 border border-border text-white rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-accent appearance-none pr-8">
+                {modelList.map(m => <option key={m} value={m}>{m}</option>)}
+                {!modelList.includes(local.model) && <option value={local.model}>{local.model}</option>}
               </select>
               <ChevronDown className="w-4 h-4 text-muted absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
             </div>
             <input
-              type="text"
-              value={local.model}
-              onChange={e => setLocal(l => ({ ...l, model: e.target.value }))}
+              type="text" value={local.model} onChange={e => setLocal(l => ({ ...l, model: e.target.value }))}
               placeholder="Or type a custom model name"
               className="w-full bg-s2 border border-border text-white placeholder-muted rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-accent font-mono"
             />
@@ -90,27 +114,19 @@ export default function LLMSettingsModal({ onClose }: Props) {
           {/* API Key */}
           {local.provider !== 'ollama' && (
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted uppercase tracking-wide">
-                API Key
-              </label>
+              <label className="text-xs font-medium text-muted uppercase tracking-wide">API Key</label>
               <div className="relative">
-                <input
-                  type={showKey ? 'text' : 'password'}
-                  value={local.apiKey}
+                <input type={showKey ? 'text' : 'password'} value={local.apiKey}
                   onChange={e => setLocal(l => ({ ...l, apiKey: e.target.value }))}
                   placeholder={`${selectedProvider.label} API key`}
                   className="w-full bg-s2 border border-border text-white placeholder-muted rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-accent font-mono pr-16"
                 />
-                <button
-                  onClick={() => setShowKey(v => !v)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted hover:text-white"
-                >
+                <button onClick={() => setShowKey(v => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted hover:text-white">
                   {showKey ? 'hide' : 'show'}
                 </button>
               </div>
-              <p className="text-xs text-muted">
-                Stored in browser localStorage only — never sent to our servers.
-              </p>
+              <p className="text-xs text-muted">Stored in browser localStorage only — never sent to our servers.</p>
             </div>
           )}
 
@@ -118,8 +134,11 @@ export default function LLMSettingsModal({ onClose }: Props) {
             <div className="bg-s2 border border-border rounded-lg px-4 py-3">
               <p className="text-xs text-muted">
                 Ollama runs locally. Make sure{' '}
-                <code className="text-violet-400 font-mono">ollama serve</code>{' '}
-                is running on your machine before using this option.
+                <code className="text-accent font-mono">ollama serve</code>{' '}
+                is running on your machine.
+                {ollamaModels.length > 0 && (
+                  <span className="block mt-1 text-success">✓ Found {ollamaModels.length} local models</span>
+                )}
               </p>
             </div>
           )}
@@ -127,16 +146,10 @@ export default function LLMSettingsModal({ onClose }: Props) {
 
         {/* Footer */}
         <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-border">
-          <button
-            onClick={onClose}
-            className="text-sm text-muted hover:text-white px-4 py-2 rounded-lg transition-colors"
-          >
+          <button onClick={onClose} className="text-sm text-muted hover:text-white px-4 py-2 rounded-lg transition-colors">
             Cancel
           </button>
-          <button
-            onClick={save}
-            className="bg-accent hover:bg-violet-600 text-white text-sm font-medium px-5 py-2 rounded-lg transition-colors"
-          >
+          <button onClick={save} className="bg-accent hover:bg-blue-500 text-white text-sm font-medium px-5 py-2 rounded-lg transition-colors">
             Save
           </button>
         </div>

@@ -1,8 +1,8 @@
+import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.middleware.auth import APIKeyMiddleware
-from app.routes.chat import router as chat_router
 from app.routes.repo import router as repo_router
 from app.routes.search import router as search_router
 from app.routes.rag import router as rag_router
@@ -12,8 +12,9 @@ from app.routes.flow import router as flow_router
 from app.routes.architecture import router as architecture_router
 from app.routes.onboarding import router as onboarding_router
 from app.routes.stats import router as stats_router
-from app.routes.tree import router as tree_router
 from app.routes.analysis import router as analysis_router
+from app.routes.files import router as files_router
+from app.routes.chat_sessions import router as sessions_router
 
 
 @asynccontextmanager
@@ -30,9 +31,14 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="RepoGraph AI", lifespan=lifespan)
 
+_cors_origins = os.getenv(
+    "ALLOWED_ORIGINS",
+    "http://localhost:3000,http://127.0.0.1:3000"
+).split(",")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -45,7 +51,21 @@ def health():
     return {"status": "ok"}
 
 
-app.include_router(chat_router)
+@app.get("/ollama/models", tags=["llm"])
+def ollama_models():
+    """Proxy Ollama /api/tags so the frontend can discover local models without CORS issues."""
+    import httpx
+    from app.core.config import get_settings
+    settings = get_settings()
+    try:
+        resp = httpx.get(f"{settings.ollama_base_url}/api/tags", timeout=5)
+        resp.raise_for_status()
+        names = [m["name"] for m in resp.json().get("models", [])]
+        return {"models": names}
+    except Exception:
+        return {"models": []}
+
+
 app.include_router(repo_router)
 app.include_router(search_router)
 app.include_router(rag_router)
@@ -55,5 +75,6 @@ app.include_router(flow_router)
 app.include_router(architecture_router)
 app.include_router(onboarding_router)
 app.include_router(stats_router)
-app.include_router(tree_router)
 app.include_router(analysis_router)
+app.include_router(files_router)
+app.include_router(sessions_router)

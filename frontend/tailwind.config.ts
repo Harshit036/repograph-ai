@@ -8,15 +8,15 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        bg: '#09090b',
-        surface: '#18181b',
-        's2': '#27272a',
-        border: '#3f3f46',
-        accent: '#8b5cf6',
-        muted: '#71717a',
+        bg:      '#212121',   // ChatGPT main content area
+        surface: '#171717',   // sidebars / panels (darker than content)
+        's2':    '#2f2f2f',   // cards, input backgrounds, user bubbles
+        border:  '#3d3d3d',   // subtle dividers
+        accent:  '#60a5fa',
+        muted:   '#8c8c8c',
         success: '#10b981',
         warning: '#f59e0b',
-        danger: '#ef4444',
+        danger:  '#ef4444',
       },
       fontFamily: {
         mono: ['JetBrains Mono', 'Fira Code', 'Consolas', 'monospace'],

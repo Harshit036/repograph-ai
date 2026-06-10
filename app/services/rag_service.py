@@ -84,7 +84,8 @@ Question: {user_query}
 Answer:"""
 
 
-def generate_rag_response(user_query: str, messages: list[dict] | None = None) -> dict:
+def generate_rag_response(user_query: str, messages: list[dict] | None = None,
+                          repo_ids: list[str] | None = None) -> dict:
     query_embedding = generate_embedding(user_query)
 
     # Query expansion: merge results from original + expanded queries
@@ -92,7 +93,7 @@ def generate_rag_response(user_query: str, messages: list[dict] | None = None) -
     seen_docs: set[str] = set()
     for q in [user_query] + _expand_query(user_query):
         emb = generate_embedding(q) if q != user_query else query_embedding
-        for pair in hybrid_search(q, emb, top_k=8):
+        for pair in hybrid_search(q, emb, top_k=8, repo_ids=repo_ids or None):
             if pair[0] not in seen_docs:
                 seen_docs.add(pair[0])
                 all_pairs.append(pair)
@@ -112,6 +113,8 @@ def generate_rag_response(user_query: str, messages: list[dict] | None = None) -
             "source_id": source_id,
             "file": file_name,
             "file_path": file_path,
+            "start_line": meta.get("start_line", 0),
+            "end_line": meta.get("end_line", 0),
             "preview": doc[:200],
             "chunk_text": doc,
         })
@@ -126,19 +129,27 @@ def generate_rag_response(user_query: str, messages: list[dict] | None = None) -
     return {"response": response, "citations": citations}
 
 
-def stream_rag_response(user_query: str, messages: list[dict] | None = None):
-    """Generator that yields SSE-formatted events: citations first, then tokens."""
-    query_embedding = generate_embedding(user_query)
+def stream_rag_response(user_query: str, messages: list[dict] | None = None,
+                        repo_ids: list[str] | None = None):
+    """Generator that yields SSE-formatted events: steps, citations, then tokens."""
+    def _step(msg: str):
+        return f"data: {json.dumps({'type': 'step', 'content': msg})}\n\n"
 
+    yield _step("Expanding query…")
+    query_embedding = generate_embedding(user_query)
+    extra_queries = _expand_query(user_query)
+
+    yield _step(f"Searching codebase ({1 + len(extra_queries)} query variants)…")
     all_pairs: list[tuple] = []
     seen_docs: set[str] = set()
-    for q in [user_query] + _expand_query(user_query):
+    for q in [user_query] + extra_queries:
         emb = generate_embedding(q) if q != user_query else query_embedding
-        for pair in hybrid_search(q, emb, top_k=8):
+        for pair in hybrid_search(q, emb, top_k=8, repo_ids=repo_ids or None):
             if pair[0] not in seen_docs:
                 seen_docs.add(pair[0])
                 all_pairs.append(pair)
 
+    yield _step(f"Reranking {len(all_pairs)} results…")
     pairs = neural_rerank(user_query, all_pairs, top_k=8)
     pairs = semantic_deduplicate(pairs)
     pairs = mmr(user_query, pairs)
@@ -154,6 +165,8 @@ def stream_rag_response(user_query: str, messages: list[dict] | None = None):
             "source_id": source_id,
             "file": file_name,
             "file_path": file_path,
+            "start_line": meta.get("start_line", 0),
+            "end_line": meta.get("end_line", 0),
             "preview": doc[:200],
             "chunk_text": doc,
         })
@@ -161,9 +174,10 @@ def stream_rag_response(user_query: str, messages: list[dict] | None = None):
         if neighbors:
             context_parts.append(f"Related imports: {', '.join(neighbors)}")
 
-    # Emit citations first so the frontend can display them immediately
+    # Emit citations so the frontend can display them
     yield f"data: {json.dumps({'type': 'citations', 'data': citations})}\n\n"
 
+    yield _step("Generating response…")
     context = "\n\n".join(context_parts)
     repo_summary = _get_repo_summary()
     prompt = _build_prompt(user_query, context, messages or [], repo_summary)

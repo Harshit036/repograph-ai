@@ -71,6 +71,58 @@ class RepoRequest(BaseModel):
     repo_url: str
     github_login: str = ""
     avatar_url: str = ""
+    github_token: str = ""
+
+
+@router.get("/repo/{repo_id}/status")
+def repo_status(repo_id: str):
+    """Return whether this repo has file contents and a graph built."""
+    user_id  = get_user_id()
+    settings = get_settings()
+    from app.db.migrations import get_repo_file_count
+    from app.db.neo4j import count_repo_nodes
+    file_count  = get_repo_file_count(settings.database_url, user_id, repo_id)
+    graph_count = count_repo_nodes(user_id, repo_id)
+    return {"has_files": file_count > 0, "has_graph": graph_count > 0, "file_count": file_count}
+
+
+@router.get("/pr-diff")
+def pr_diff(url: str):
+    """Fetch changed files for a GitHub PR URL."""
+    import re, httpx
+    m = re.match(r'https?://github\.com/([^/]+)/([^/]+)/pull/(\d+)', url.strip())
+    if not m:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail="Invalid GitHub PR URL. Expected format: https://github.com/owner/repo/pull/123")
+    owner, repo, pr_num = m.group(1), m.group(2), m.group(3)
+    api_url = f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_num}/files"
+    headers = {"Accept": "application/vnd.github.v3+json", "User-Agent": "RepoGraphAI"}
+    try:
+        resp = httpx.get(api_url, headers=headers, timeout=15)
+        resp.raise_for_status()
+        files = resp.json()
+        # Also fetch PR metadata
+        pr_resp = httpx.get(f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_num}", headers=headers, timeout=10)
+        pr_meta = pr_resp.json() if pr_resp.status_code == 200 else {}
+        return {
+            "title": pr_meta.get("title", f"PR #{pr_num}"),
+            "number": int(pr_num),
+            "body": pr_meta.get("body", ""),
+            "repo": f"{owner}/{repo}",
+            "files": [
+                {
+                    "filename": f["filename"],
+                    "status": f["status"],          # added/modified/removed
+                    "additions": f["additions"],
+                    "deletions": f["deletions"],
+                    "patch": f.get("patch", ""),    # unified diff text
+                }
+                for f in files
+            ],
+        }
+    except Exception as e:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=502, detail=f"GitHub API error: {e}")
 
 
 @router.post("/ingest-repo")
@@ -83,7 +135,8 @@ def ingest_repo(request: RepoRequest):
     if request.github_login:
         upsert_user(settings.database_url, user_id, request.github_login, request.avatar_url)
 
-    remote_sha = get_remote_head_sha(repo_url)
+    github_token = request.github_token.strip()
+    remote_sha = get_remote_head_sha(repo_url, github_token)
     existing   = get_repo_entry(settings.database_url, user_id, rid)
 
     if existing and remote_sha and existing["commit_sha"] == remote_sha:
@@ -97,7 +150,7 @@ def ingest_repo(request: RepoRequest):
     delete_repo_embeddings(settings.database_url, user_id, rid)
     clear_user_repo(user_id, rid)
 
-    repo_path, is_temp = clone_repository(repo_url)
+    repo_path, is_temp = clone_repository(repo_url, github_token)
     try:
         # Phase 1: orientation pass before full scan
         orientation_data = read_orientation_data(repo_path)

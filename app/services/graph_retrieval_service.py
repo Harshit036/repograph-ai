@@ -6,9 +6,24 @@ get_graph_neighbors_for_repo() → same but avoids a redundant DB lookup when
                                   repo_id is already known in the caller
 """
 import logging
+import re
 from app.core.user_context import get_user_id
 
 logger = logging.getLogger(__name__)
+
+
+def _to_relative_path(path: str) -> str:
+    """Strip the temp clone prefix to get a repo-relative file path.
+
+    Paths stored in the graph look like:
+      /tmp/repograph_abc123/repositories/<repo-name>/app/main.py
+    We want:
+      app/main.py
+    """
+    if not path or path in ("unknown", "external"):
+        return path
+    m = re.search(r'/repositories/[^/]+/(.+)', path)
+    return m.group(1) if m else path
 
 
 def _get_latest_repo(user_id: str) -> dict | None:

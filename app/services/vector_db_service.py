@@ -82,14 +82,20 @@ def load_chunks_for_user(user_id: str) -> list[dict]:
         return []
 
 
-def search_similar_chunks(query_embedding: list, user_id: str, top_k: int = 5) -> dict:
-    """Search by vector, scoped to the given user."""
+def search_similar_chunks(query_embedding: list, user_id: str, top_k: int = 5,
+                          repo_ids: list[str] | None = None) -> dict:
+    """Search by vector, scoped to the given user (and optionally specific repos)."""
     _empty = {"documents": [[]], "metadatas": [[]]}
     try:
+        if repo_ids:
+            # LangChain PGVector supports $in operator for JSONB metadata
+            search_filter = {"user_id": user_id, "repo_id": {"$in": repo_ids}}
+        else:
+            search_filter = {"user_id": user_id}
         results = _get_vectorstore().similarity_search_by_vector(
             embedding=query_embedding,
             k=top_k,
-            filter={"user_id": user_id},
+            filter=search_filter,
         )
         docs = [doc.page_content for doc in results]
         metas = [doc.metadata for doc in results]

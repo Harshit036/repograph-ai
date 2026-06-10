@@ -1,7 +1,6 @@
 """Dead code detection — functions with no incoming CALLS edges in Neo4j."""
-import os
 from app.core.user_context import get_user_id
-from app.services.graph_retrieval_service import _get_latest_repo
+from app.services.graph_retrieval_service import _get_latest_repo, _to_relative_path
 
 
 def _group_by_file(rows: list[dict]) -> list[dict]:
@@ -13,7 +12,7 @@ def _group_by_file(rows: list[dict]) -> list[dict]:
             "line": r.get("line") or 0,
         })
     return [
-        {"file": os.path.relpath(fp) if fp != "unknown" else fp, "functions": fns}
+        {"file": _to_relative_path(fp), "functions": fns}
         for fp, fns in sorted(by_file.items())
     ]
 

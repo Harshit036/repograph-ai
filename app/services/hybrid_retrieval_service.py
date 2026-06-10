@@ -4,8 +4,14 @@ from app.storage.user_stores import get_chunks
 from app.services.vector_db_service import search_similar_chunks
 
 
-def bm25_search(query: str, top_k: int = 10) -> list:
+def bm25_search(query: str, top_k: int = 10, repo_ids: list[str] | None = None) -> list:
     chunks = get_chunks(get_user_id())
+    if not chunks:
+        return []
+
+    # Filter to requested repos when specified
+    if repo_ids:
+        chunks = [c for c in chunks if c.get("metadata", {}).get("repo_id") in repo_ids]
     if not chunks:
         return []
 
@@ -24,16 +30,18 @@ def reciprocal_rank_fusion(rankings: list, k: int = 60) -> dict:
     return scores
 
 
-def hybrid_search(query: str, query_embedding: list, top_k: int = 5) -> list:
+def hybrid_search(query: str, query_embedding: list, top_k: int = 5,
+                  repo_ids: list[str] | None = None) -> list:
     user_id = get_user_id()
     fetch_k = top_k * 2
 
-    semantic_results = search_similar_chunks(query_embedding, user_id=user_id, top_k=fetch_k)
+    semantic_results = search_similar_chunks(query_embedding, user_id=user_id, top_k=fetch_k,
+                                             repo_ids=repo_ids or None)
     semantic_docs    = semantic_results["documents"][0]
     semantic_metas   = semantic_results["metadatas"][0]
     meta_map = {doc: meta for doc, meta in zip(semantic_docs, semantic_metas)}
 
-    bm25_results = bm25_search(query, top_k=fetch_k)
+    bm25_results = bm25_search(query, top_k=fetch_k, repo_ids=repo_ids or None)
     for chunk in bm25_results:
         if chunk["content"] not in meta_map:
             meta_map[chunk["content"]] = chunk["metadata"]

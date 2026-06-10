@@ -1,0 +1,70 @@
+
+# Production override for docker-compose.yml
+# Usage: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# Required env vars (set via .env.production or Railway/platform secrets):
+#   API_KEY, DATABASE_URL, NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD
+#   ALLOWED_ORIGINS, NEXT_PUBLIC_API_URL, NEXTAUTH_URL, NEXTAUTH_SECRET
+#   GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET
+#
+# Generate secrets:
+#   API_KEY:        openssl rand -hex 32
+#   NEXTAUTH_SECRET: openssl rand -base64 32
+
+services:
+
+  postgres:
+    ports: []                       # don't expose DB port externally
+    restart: always
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file: .env.production
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
+      NEO4J_URI: ${NEO4J_URI}
+      NEO4J_USER: ${NEO4J_USER}
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD}
+      OLLAMA_BASE_URL: ""           # no Ollama in prod — users provide BYOK keys
+    volumes:
+      - repo_data:/app/repositories  # persistent named volume (not bind mount)
+    ports: []                        # nginx handles ingress; don't expose directly
+    restart: always
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+        NEXT_PUBLIC_API_KEY: ${API_KEY}
+    env_file: ./frontend/.env.production
+    environment:
+      NEXTAUTH_URL: ${NEXTAUTH_URL}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET}
+    ports: []                        # nginx handles ingress
+    restart: always
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro     # mount certs (or use Certbot)
+    depends_on:
+      - api
+      - frontend
+    restart: always
+
+volumes:
+  pgdata:
+  neo4j_data:
+  ollama_models:
+  repo_data:
