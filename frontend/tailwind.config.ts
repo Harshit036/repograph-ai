@@ -1,17 +1,19 @@
 import type { Config } from 'tailwindcss'
+import tailwindcssAnimate from 'tailwindcss-animate'
 
 const config: Config = {
   content: [
     './app/**/*.{js,ts,jsx,tsx,mdx}',
     './components/**/*.{js,ts,jsx,tsx,mdx}',
+    './hooks/**/*.{js,ts,jsx,tsx}',
   ],
   theme: {
     extend: {
       colors: {
-        bg:      '#212121',   // ChatGPT main content area
-        surface: '#171717',   // sidebars / panels (darker than content)
-        's2':    '#2f2f2f',   // cards, input backgrounds, user bubbles
-        border:  '#3d3d3d',   // subtle dividers
+        bg:      '#000000',   // main content area — true black
+        surface: '#0a0a0a',   // sidebars / panels
+        's2':    '#171717',   // cards, input backgrounds, user bubbles
+        border:  '#262626',   // subtle dividers
         accent:  '#60a5fa',
         muted:   '#8c8c8c',
         success: '#10b981',
@@ -26,6 +28,6 @@ const config: Config = {
       },
     },
   },
-  plugins: [],
+  plugins: [tailwindcssAnimate],
 }
 export default config

@@ -24,25 +24,28 @@ def global_search(q: str = Query(..., min_length=1)):
     from app.core.config import get_settings
     from app.db.neo4j import get_driver
     from app.services.graph_retrieval_service import _to_relative_path
-    import psycopg2
-    from app.db.migrations import _get_conn
 
     user_id  = get_user_id()
     settings = get_settings()
     q_lower  = q.lower()
 
-    # ── 1. File name search (repo_files) ──────────────────────────────────────
+    # ── 1. File name search (Neo4j File nodes) ────────────────────────────────
     file_results: list[dict] = []
     try:
-        conn = _get_conn(settings.database_url)
-        cur  = conn.cursor()
-        cur.execute(
-            "SELECT file_path, language FROM repo_files WHERE user_id = %s AND lower(file_path) LIKE %s LIMIT 20",
-            (user_id, f"%{q_lower}%"),
-        )
-        for row in cur.fetchall():
-            file_results.append({"file_path": row[0], "display": _to_relative_path(row[0]), "language": row[1]})
-        cur.close(); conn.close()
+        with get_driver().session() as session:
+            result = session.run(
+                """
+                MATCH (f:File {user_id: $uid})
+                WHERE f.path IS NOT NULL AND toLower(f.path) CONTAINS $q
+                RETURN DISTINCT f.path AS path
+                ORDER BY f.path LIMIT 20
+                """,
+                uid=user_id, q=q_lower,
+            )
+            for row in result:
+                rel = _to_relative_path(row["path"])
+                lang = rel.rsplit(".", 1)[-1] if "." in rel else "text"
+                file_results.append({"file_path": row["path"], "display": rel, "language": lang})
     except Exception as e:
         print(f"global_search file error: {e}")
 

@@ -48,13 +48,8 @@ function withHeaders<T>(fn: () => Promise<T>, includeLLM = false): Promise<T> {
 }
 
 export type Citation = {
-  source_id: number; file: string; file_path: string
+  source_id: number; file: string; file_path: string; rel_path?: string
   start_line: number; end_line: number; preview: string; chunk_text?: string
-}
-
-export interface ChatSession {
-  id: string; title: string; repo_ids: string[]
-  created_at: string | null; updated_at: string | null
 }
 
 export const api = {
@@ -69,22 +64,9 @@ export const api = {
     withHeaders(() =>
       client.post('/ingest-repo', { repo_url, github_login, avatar_url, github_token }, { timeout: 600_000 }).then(r => r.data)
     ) as Promise<{
-      skipped: boolean; message?: string
+      skipped: boolean; message?: string; commit_sha?: string
       total_files: number; files: { file_name: string; total_chunks: number }[]
     }>,
-
-  repoStatus: (repoId: string) =>
-    withHeaders(() => client.get(`/repo/${repoId}/status`).then(r => r.data)) as Promise<{
-      has_files: boolean; has_graph: boolean; file_count: number
-    }>,
-
-  deleteRepo: (repoId: string) =>
-    withHeaders(() => client.delete(`/repo/${repoId}`).then(r => r.data)) as Promise<{ deleted: boolean }>,
-
-  myRepos: () =>
-    withHeaders(() => client.get('/my-repos').then(r => r.data)) as Promise<
-      { repo_url: string; repo_id: string; commit_sha: string; file_count: number; chunk_count: number; ingested_at: string }[]
-    >,
 
   prDiff: (url: string) =>
     withHeaders(() => client.get('/pr-diff', { params: { url } }).then(r => r.data)) as Promise<{
@@ -102,9 +84,10 @@ export const api = {
     messages: ChatMessage[],
     repo_ids: string[],
     onToken: (t: string) => void,
-    onDone: (citations: Citation[]) => void,
+    onCitations: (citations: Citation[]) => void,
     onError: (e: string) => void,
     onStep?: (step: string) => void,
+    onDone?: () => void,
   ): Promise<void> => {
     const headers: Record<string, string> = {
       'X-API-Key': API_KEY,
@@ -132,9 +115,10 @@ export const api = {
           try {
             const evt = JSON.parse(line.slice(6))
             if (evt.type === 'token') onToken(evt.content)
-            else if (evt.type === 'citations') onDone(evt.data)
+            else if (evt.type === 'citations') onCitations(evt.data)
             else if (evt.type === 'step') onStep?.(evt.content)
             else if (evt.type === 'error') onError(evt.content)
+            else if (evt.type === 'done') onDone?.()
           } catch { /* skip malformed */ }
         }
       }
@@ -222,24 +206,19 @@ export const api = {
       total: number
     }>,
 
-  fileTree: (repoId?: string) =>
-    withHeaders(() => client.get('/files', { params: repoId ? { repo_id: repoId } : {} }).then(r => r.data)) as Promise<
-      { file_path: string; language: string; size: number }[]
-    >,
-
-  fileContent: (path: string, repoId?: string) =>
-    withHeaders(() => client.get('/file', { params: { path, ...(repoId ? { repo_id: repoId } : {}) } }).then(r => r.data)) as Promise<
-      { content: string; language: string }
-    >,
-
   deadCode: (repoId?: string) =>
     withHeaders(() => client.get('/dead-code', { params: repoId ? { repo_id: repoId } : {} }).then(r => r.data), true) as Promise<{
-      total: number; by_file: { file: string; functions: { name: string; line: number }[] }[]; message: string
+      total: number
+      symbols: { symbol: string; file: string; rel_path: string; line: number; callers: number }[]
+      message: string
     }>,
 
   testCoverage: (repoId?: string) =>
     withHeaders(() => client.get('/test-coverage', { params: repoId ? { repo_id: repoId } : {} }).then(r => r.data), true) as Promise<{
-      total: number; by_file: { file: string; functions: { name: string; line: number }[] }[]; message: string
+      total: number
+      untested: number
+      functions: { name: string; file: string; rel_path: string; line: number; coverage: number; tested: boolean }[]
+      message: string
     }>,
 
   globalSearch: (q: string) =>
@@ -248,22 +227,4 @@ export const api = {
       functions: { name: string; file_path: string; display: string; line: number }[]
       code: { file_path: string; display: string; line: number; snippet: string }[]
     }>,
-
-  // ── Chat sessions ────────────────────────────────────────────────────────
-  sessions: {
-    list: () =>
-      withHeaders(() => client.get('/sessions').then(r => r.data)) as Promise<ChatSession[]>,
-    create: (title?: string, repo_ids?: string[]) =>
-      withHeaders(() => client.post('/sessions', { title: title ?? '', repo_ids: repo_ids ?? [] }).then(r => r.data)) as Promise<ChatSession>,
-    delete: (id: string) =>
-      withHeaders(() => client.delete(`/sessions/${id}`).then(r => r.data)) as Promise<{ deleted: boolean }>,
-    rename: (id: string, title: string) =>
-      withHeaders(() => client.patch(`/sessions/${id}/title`, { title }).then(r => r.data)),
-    messages: (id: string) =>
-      withHeaders(() => client.get(`/sessions/${id}/messages`).then(r => r.data)) as Promise<
-        { id: string; role: string; content: string; citations: Citation[] | null; actions: string[] | null; created_at: string | null }[]
-      >,
-    saveMessage: (id: string, role: string, content: string, citations?: Citation[] | null, actions?: string[] | null) =>
-      withHeaders(() => client.post(`/sessions/${id}/messages`, { role, content, citations, actions }).then(r => r.data)),
-  },
 }

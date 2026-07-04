@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { Search, FileCode2, Code2, X, Loader2, Hash } from 'lucide-react'
 import { api } from '@/lib/api'
 import { useWorkspace } from '@/store/workspace'
+import { openGithubBlob } from '@/lib/github'
 
 interface SearchResult {
   files: { file_path: string; display: string; language: string }[]
@@ -16,7 +17,7 @@ const LANG_COLOR: Record<string, string> = {
 }
 
 export default function CommandPalette() {
-  const { openCodeViewer } = useWorkspace()
+  const { currentRepo } = useWorkspace()
   const [open, setOpen] = useState(false)
   const [q, setQ] = useState('')
   const [results, setResults] = useState<SearchResult | null>(null)
@@ -66,7 +67,7 @@ export default function CommandPalette() {
   ] : []
 
   const navigate = (item: typeof flat[0]) => {
-    openCodeViewer(item.file_path, item.line || 1)
+    openGithubBlob(currentRepo, item.display, item.line || 1)
     setOpen(false)
   }
 
@@ -171,7 +172,7 @@ export default function CommandPalette() {
 
         <div className="flex items-center gap-3 px-4 py-2 border-t border-border">
           <span className="text-[10px] text-muted">↑↓ navigate</span>
-          <span className="text-[10px] text-muted">↵ open in explorer</span>
+          <span className="text-[10px] text-muted">↵ open on GitHub</span>
           <span className="text-[10px] text-muted ml-auto">⌘K to close</span>
         </div>
       </div>

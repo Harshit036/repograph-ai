@@ -68,12 +68,8 @@ def cleanup_repository(path: str) -> None:
 
 
 def scan_repository(repo_path: str, user_id: str, repo_id: str, commit_sha: str) -> list:
-    from app.db.migrations import bulk_insert_repo_files
-    from app.core.config import get_settings
-
     repository_data = []
     chunks = get_chunks(user_id)
-    file_records: list[dict] = []
 
     for root, dirs, files in os.walk(repo_path):
         dirs[:] = [d for d in dirs if d not in IGNORE_DIRECTORIES]
@@ -86,9 +82,6 @@ def scan_repository(repo_path: str, user_id: str, repo_id: str, commit_sha: str)
             try:
                 with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
                     content = f.read()
-
-                language = _LANG_MAP.get(ext, "text")
-                file_records.append({"file_path": file_path, "content": content, "language": language})
 
                 file_chunks = chunk_file(content, ext)
 
@@ -117,11 +110,5 @@ def scan_repository(repo_path: str, user_id: str, repo_id: str, commit_sha: str)
                 })
             except Exception as e:
                 print(f"Failed to read {file_path}: {e}")
-
-    # Persist full file contents for Code Explorer
-    try:
-        bulk_insert_repo_files(get_settings().database_url, user_id, repo_id, file_records)
-    except Exception as e:
-        print(f"bulk_insert_repo_files error: {e}")
 
     return repository_data

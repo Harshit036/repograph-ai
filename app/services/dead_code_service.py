@@ -3,18 +3,20 @@ from app.core.user_context import get_user_id
 from app.services.graph_retrieval_service import _get_latest_repo, _to_relative_path
 
 
-def _group_by_file(rows: list[dict]) -> list[dict]:
-    by_file: dict = {}
+def _to_symbols(rows: list[dict]) -> list[dict]:
+    """Flatten Neo4j rows into the flat symbol list the UI renders."""
+    symbols = []
     for r in rows:
-        fp = r.get("file_path", "unknown")
-        by_file.setdefault(fp, []).append({
-            "name": r["name"],
-            "line": r.get("line") or 0,
+        rel = _to_relative_path(r.get("file_path", "unknown"))
+        symbols.append({
+            "symbol":   r["name"],
+            "file":     rel.split("/")[-1],
+            "rel_path": rel,
+            "line":     r.get("line") or 0,
+            "callers":  0,  # dead code by definition has zero incoming calls
         })
-    return [
-        {"file": _to_relative_path(fp), "functions": fns}
-        for fp, fns in sorted(by_file.items())
-    ]
+    # Sort by file then symbol for stable display.
+    return sorted(symbols, key=lambda s: (s["file"], s["symbol"]))
 
 
 def analyze_dead_code(repo_id: str | None = None) -> dict:
@@ -24,7 +26,7 @@ def analyze_dead_code(repo_id: str | None = None) -> dict:
         if not repo:
             return {
                 "total": 0,
-                "by_file": [],
+                "symbols": [],
                 "message": "No repository data found. Please analyze a repository first.",
             }
         repo_id = repo["repo_id"]
@@ -35,12 +37,13 @@ def analyze_dead_code(repo_id: str | None = None) -> dict:
     if not dead:
         return {
             "total": 0,
-            "by_file": [],
+            "symbols": [],
             "message": "No unreferenced functions detected — graph may still be building, or re-analyze to populate Neo4j.",
         }
 
+    symbols = _to_symbols(dead)
     return {
-        "total": len(dead),
-        "by_file": _group_by_file(dead),
-        "message": f"Found {len(dead)} potentially unreferenced function(s) across {len(_group_by_file(dead))} file(s).",
+        "total": len(symbols),
+        "symbols": symbols,
+        "message": f"{len(symbols)} symbols have zero incoming calls in the graph — candidates for removal.",
     }

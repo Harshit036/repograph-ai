@@ -1,35 +1,18 @@
 import json
 from app.core.user_context import get_user_id
 from app.services.embedding_service import generate_embedding
-from app.services.graph_retrieval_service import get_graph_neighbors
+from app.services.graph_retrieval_service import get_graph_neighbors, _to_relative_path
 from app.services.hybrid_retrieval_service import hybrid_search
 from app.services.llm_service import generate_response, stream_response
 from app.services.reranking_service import neural_rerank, semantic_deduplicate, mmr
-from app.db.migrations import get_repo_entry
-from app.core.config import get_settings
 
 
 def _get_repo_summary() -> str:
-    """Load the stored repo summary for the current user's active context."""
+    """Load the active repo's summary from the in-memory registry."""
     try:
-        settings = get_settings()
-        user_id = get_user_id()
-        # repo_summary is stored in user_repos; we pick the most recent one
-        import psycopg2
-        url = settings.database_url.replace("postgresql+psycopg2://", "")
-        user_pass, rest = url.split("@")
-        user, password = user_pass.split(":")
-        host_port, dbname = rest.split("/")
-        host, port = (host_port.split(":") + ["5432"])[:2]
-        conn = psycopg2.connect(host=host, port=int(port), dbname=dbname, user=user, password=password)
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT repo_summary FROM user_repos WHERE user_id = %s AND repo_summary IS NOT NULL ORDER BY ingested_at DESC LIMIT 1",
-            (user_id,)
-        )
-        row = cur.fetchone()
-        cur.close(); conn.close()
-        return row[0] if row else ""
+        from app.storage.user_stores import get_active_repo
+        repo = get_active_repo(get_user_id())
+        return repo.get("summary", "") if repo else ""
     except Exception:
         return ""
 
@@ -113,6 +96,7 @@ def generate_rag_response(user_query: str, messages: list[dict] | None = None,
             "source_id": source_id,
             "file": file_name,
             "file_path": file_path,
+            "rel_path": _to_relative_path(file_path),
             "start_line": meta.get("start_line", 0),
             "end_line": meta.get("end_line", 0),
             "preview": doc[:200],
@@ -165,6 +149,7 @@ def stream_rag_response(user_query: str, messages: list[dict] | None = None,
             "source_id": source_id,
             "file": file_name,
             "file_path": file_path,
+            "rel_path": _to_relative_path(file_path),
             "start_line": meta.get("start_line", 0),
             "end_line": meta.get("end_line", 0),
             "preview": doc[:200],

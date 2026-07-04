@@ -13,8 +13,6 @@ from app.routes.architecture import router as architecture_router
 from app.routes.onboarding import router as onboarding_router
 from app.routes.stats import router as stats_router
 from app.routes.analysis import router as analysis_router
-from app.routes.files import router as files_router
-from app.routes.chat_sessions import router as sessions_router
 
 
 @asynccontextmanager
@@ -76,5 +74,3 @@ app.include_router(architecture_router)
 app.include_router(onboarding_router)
 app.include_router(stats_router)
 app.include_router(analysis_router)
-app.include_router(files_router)
-app.include_router(sessions_router)

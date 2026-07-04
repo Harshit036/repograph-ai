@@ -287,7 +287,7 @@ def repository_agent(user_query: str):
     known_facts = "\n".join(memory["discovered_facts"])
     context = "\n\n".join(list(set(observations))[:8])
 
-    prompt = f"""You are RepoGraph AI Agent.
+    prompt = f"""You are RepoGraph AI, an expert code analysis assistant.
 
 Discovered Facts:
 {known_facts}
@@ -298,10 +298,16 @@ Repository Evidence:
 User Question:
 {user_query}
 
-Provide:
-- implementation explanation
-- architecture insights
-- execution flow"""
+Answer clearly and thoroughly using markdown formatting:
+- Use **bold** for important terms, function names, and file names
+- Use `backticks` for inline code, variable names, and paths
+- Use numbered or bullet lists for steps and multiple items
+- Use code blocks with language tags (```python, ```typescript, etc.) for code snippets
+- Use ## headers to organise long answers
+- Cover implementation details, architecture insights, and execution flow as relevant
+- If the answer is not in the context, say so directly
+
+Answer:"""
 
     response = generate_response(prompt)
     return {"response": response, "actions": actions, "memory": memory}

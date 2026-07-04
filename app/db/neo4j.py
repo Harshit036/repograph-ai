@@ -290,6 +290,45 @@ def get_dead_functions(user_id: str, repo_id: str) -> list[dict]:
         return []
 
 
+def get_function_coverage(user_id: str, repo_id: str, limit: int = 15) -> list[dict]:
+    """Graph-estimated test coverage for the most-called ("hot") production functions.
+
+    Coverage is estimated from the call graph, NOT executed-line coverage:
+    for each function we count distinct callers and how many of them are test
+    functions. Ranked by in-degree so the "hot path" surfaces first.
+    """
+    _SKIP_PATHS = [
+        "node_modules", "/venv/", "/.venv/", "site-packages",
+        "__pycache__", "/dist/", "/build/", "/vendor/", "/.tox/",
+        ".egg-info", "/eggs/",
+    ]
+    try:
+        with get_driver().session() as session:
+            result = session.run(
+                """
+                MATCH (f:Function {user_id: $uid, repo_id: $rid})
+                WHERE NOT f.is_test
+                  AND f.file_path IS NOT NULL
+                  AND f.file_path <> "unknown"
+                  AND NOT any(p IN $skip_paths WHERE f.file_path CONTAINS p)
+                OPTIONAL MATCH (caller:Function {user_id: $uid, repo_id: $rid})-[:CALLS]->(f)
+                WITH f,
+                     count(DISTINCT caller) AS total_callers,
+                     count(DISTINCT CASE WHEN caller.is_test THEN caller END) AS test_callers
+                WHERE total_callers > 0
+                RETURN f.name AS name, f.file_path AS file_path, f.start_line AS line,
+                       total_callers, test_callers
+                ORDER BY total_callers DESC, f.name
+                LIMIT $lim
+                """,
+                uid=user_id, rid=repo_id, skip_paths=_SKIP_PATHS, lim=limit,
+            )
+            return [dict(r) for r in result]
+    except Exception as e:
+        logger.warning("get_function_coverage error: %s", e)
+        return []
+
+
 def get_untested_functions(user_id: str, repo_id: str) -> list[dict]:
     """Production functions not called by any test function."""
     _SKIP_PATHS = [

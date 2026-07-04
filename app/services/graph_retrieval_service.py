@@ -15,24 +15,37 @@ logger = logging.getLogger(__name__)
 def _to_relative_path(path: str) -> str:
     """Strip the temp clone prefix to get a repo-relative file path.
 
-    Paths stored in the graph look like:
-      /tmp/repograph_abc123/repositories/<repo-name>/app/main.py
-    We want:
-      app/main.py
+    Repos are cloned via tempfile.mkdtemp(prefix="repograph_") so paths look like:
+      /tmp/repograph_abc123/app/main.py  →  app/main.py
+    Legacy paths (if any) may have an extra /repositories/<name>/ segment:
+      /tmp/repograph_abc123/repositories/<repo>/app/main.py  →  app/main.py
     """
     if not path or path in ("unknown", "external"):
         return path
+    # Legacy: explicit /repositories/<repo-name>/ segment
     m = re.search(r'/repositories/[^/]+/(.+)', path)
-    return m.group(1) if m else path
+    if m:
+        return m.group(1)
+    # Current: /tmp/repograph_<hash>/<direct-content>
+    m = re.search(r'/tmp/repograph_[^/]+/(.+)', path)
+    if m:
+        return m.group(1)
+    # Generic tmpdir fallback (e.g. /private/tmp on macOS, or custom TMPDIR)
+    m = re.search(r'/tmp[^/]*/repograph_[^/]+/(.+)', path)
+    if m:
+        return m.group(1)
+    return path
 
 
 def _get_latest_repo(user_id: str) -> dict | None:
-    """Return the most recently ingested repo row for a user, or None."""
+    """Return the active (currently-ingested) repo record for a user, or None.
+
+    Repos are no longer persisted — this reads the in-memory registry, which
+    reconstructs itself from pgvector chunk metadata after a restart.
+    """
     try:
-        from app.db.migrations import get_user_repos
-        from app.core.config import get_settings
-        repos = get_user_repos(get_settings().database_url, user_id)
-        return repos[0] if repos else None
+        from app.storage.user_stores import get_active_repo
+        return get_active_repo(user_id)
     except Exception as e:
         logger.warning("_get_latest_repo error: %s", e)
         return None
@@ -55,12 +68,7 @@ def get_active_graph(user_id: str, limit: int = 20) -> dict:
     except Exception as e:
         logger.warning("get_active_graph Neo4j error: %s", e)
 
-    # Fallback: JSONB persisted in Postgres (repos ingested before Neo4j)
-    try:
-        from app.db.migrations import load_graph_for_user
-        return load_graph_for_user(user_id)
-    except Exception:
-        return {}
+    return {}
 
 
 def get_graph_neighbors(file_path: str) -> list[str]:

@@ -1,8 +1,5 @@
 'use client'
-import { useRef, useEffect, useState, useCallback } from 'react'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
-import rehypeHighlight from 'rehype-highlight'
+import { useState, useCallback } from 'react'
 import {
   BookOpen, Code2, GitBranch,
   Loader2, AlertCircle, Search, ChevronLeft,
@@ -11,109 +8,16 @@ import {
 } from 'lucide-react'
 import { api } from '@/lib/api'
 import { useWorkspace, ToolTab, ToolResult } from '@/store/workspace'
-
-// ── Mermaid diagram ────────────────────────────────────────────────────────────
-
-function MermaidDiagram({ content }: { content: string }) {
-  const ref = useRef<HTMLDivElement>(null)
-  const idRef = useRef(`mermaid-rp-${Math.random().toString(36).slice(2)}`)
-  const [error, setError] = useState(false)
-
-  useEffect(() => {
-    if (!ref.current || !content.trim()) return
-    import('mermaid').then(m => {
-      m.default.initialize({
-        startOnLoad: false, theme: 'dark',
-        themeVariables: {
-          background: '#212121', primaryColor: '#2f2f2f',
-          primaryTextColor: '#ececec', lineColor: '#60a5fa',
-          nodeBorder: '#3d3d3d', clusterBkg: '#2f2f2f',
-        },
-      })
-      m.default.render(idRef.current, content)
-        .then(({ svg }) => { if (ref.current) ref.current.innerHTML = svg })
-        .catch(() => setError(true))
-    }).catch(() => setError(true))
-  }, [content])
-
-  if (error) {
-    return (
-      <pre className="bg-bg border border-border rounded-lg p-3 text-xs text-zinc-400 overflow-x-auto whitespace-pre-wrap my-3">
-        {content}
-      </pre>
-    )
-  }
-  return (
-    <div
-      ref={ref}
-      className="my-3 p-4 bg-bg border border-border rounded-lg overflow-x-auto [&_svg]:max-w-full [&_svg]:h-auto"
-    />
-  )
-}
-
-// ── Code block with copy button ────────────────────────────────────────────────
-
-function CodeBlock({ children, ...props }: React.HTMLAttributes<HTMLPreElement>) {
-  const [copied, setCopied] = useState(false)
-  const preRef = useRef<HTMLPreElement>(null)
-
-  const copy = () => {
-    navigator.clipboard.writeText(preRef.current?.innerText ?? '')
-    setCopied(true)
-    setTimeout(() => setCopied(false), 1500)
-  }
-
-  const codeEl = Array.isArray(children)
-    ? (children as React.ReactElement[]).find(c => c && typeof c === 'object' && 'props' in c)
-    : children as React.ReactElement
-  const className = (codeEl as React.ReactElement | null)?.props?.className as string | undefined
-  const lang = className?.split(' ').find(c => c.startsWith('language-'))?.replace('language-', '')
-
-  if (lang === 'mermaid') {
-    const raw = (codeEl as React.ReactElement | null)?.props?.children
-    return <MermaidDiagram content={typeof raw === 'string' ? raw : String(raw ?? '')} />
-  }
-
-  return (
-    <div className="relative my-3 rounded-lg overflow-hidden border border-border">
-      <div className="flex items-center justify-between bg-s2 px-3 py-1.5 border-b border-border">
-        <span className="text-[10px] text-muted font-mono uppercase tracking-wide">{lang || 'code'}</span>
-        <button
-          onClick={copy}
-          className="flex items-center gap-1 text-[10px] text-muted hover:text-white transition-colors"
-        >
-          {copied
-            ? <><Check className="w-3 h-3 text-success" /><span>Copied</span></>
-            : <><Copy className="w-3 h-3" /><span>Copy</span></>}
-        </button>
-      </div>
-      <pre ref={preRef} {...props} className="!m-0 !rounded-none !border-0 overflow-x-auto">
-        {children}
-      </pre>
-    </div>
-  )
-}
+import { openGithubBlob } from '@/lib/github'
+import { MarkdownRenderer } from '@/components/markdown'
 
 // ── Shared markdown renderer ───────────────────────────────────────────────────
+// Thin wrapper over the reusable MarkdownRenderer library. Tool-panel content
+// (orientation guides, architecture summaries) has no citations, so this just
+// forwards text — code highlighting, copy buttons and Mermaid come for free.
 
 function MdContent({ text }: { text: string }) {
-  return (
-    <ReactMarkdown
-      remarkPlugins={[remarkGfm]}
-      rehypePlugins={[rehypeHighlight]}
-      className="prose prose-invert prose-sm max-w-none
-        prose-headings:text-white prose-headings:font-semibold prose-headings:mt-4 prose-headings:mb-2
-        prose-p:text-zinc-300 prose-p:leading-relaxed prose-p:my-1.5
-        prose-li:text-zinc-300 prose-li:my-0.5
-        prose-code:text-accent prose-code:bg-s2 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:text-xs prose-code:font-mono prose-code:before:content-none prose-code:after:content-none
-        prose-pre:bg-transparent prose-pre:p-0 prose-pre:my-0 prose-pre:border-0
-        prose-strong:text-white prose-a:text-accent prose-a:no-underline hover:prose-a:underline
-        prose-blockquote:border-accent/40 prose-blockquote:text-zinc-400"
-      components={{ pre: (props) => <CodeBlock {...props as React.HTMLAttributes<HTMLPreElement>} /> }}
-    >
-      {text}
-    </ReactMarkdown>
-  )
+  return <MarkdownRenderer content={text} theme="dark" />
 }
 
 // ── Flow trace — types ────────────────────────────────────────────────────────
@@ -176,7 +80,7 @@ function FlowNode({
   node: TreeNode; depth: number; direction: string
 }) {
   const [expanded, setExpanded] = useState(depth < 3)
-  const { openCodeViewer } = useWorkspace()
+  const { currentRepo } = useWorkspace()
   const hasChildren = node.children.length > 0
   const color = extColor(node.file)
   const fileName = node.file.split('/').pop() ?? node.file
@@ -192,7 +96,7 @@ function FlowNode({
             : 'hover:bg-s2'
         }`}
         style={{ marginLeft: `${depth * 20}px` }}
-        onClick={() => node.file_path && openCodeViewer(node.file_path, node.line || 1)}
+        onClick={() => node.file && openGithubBlob(currentRepo, node.file, node.line || 1)}
       >
         {/* Expand toggle */}
         <button
@@ -395,81 +299,121 @@ const TOOLS: ToolDef[] = [
 // ── Onboarding content ────────────────────────────────────────────────────────
 
 function OnboardingContent({ data }: { data: unknown }) {
-  const d = data as { guide: string; entry_points: { file: string; reasons: string[] }[] }
+  const d = data as { guide: string }
   return (
     <div className="space-y-4">
-      {d.entry_points?.length > 0 && (
-        <div className="space-y-2">
-          <p className="text-[11px] font-semibold text-muted uppercase tracking-wider">Entry Points</p>
-          {d.entry_points.map((ep, i) => (
-            <div key={i} className="bg-s2 border border-border rounded-lg p-3">
-              <p className="text-xs font-mono text-accent truncate">{ep.file}</p>
-              {ep.reasons.map((r, j) => (
-                <p key={j} className="text-[11px] text-zinc-400 mt-1 leading-relaxed">• {r}</p>
-              ))}
-            </div>
-          ))}
-        </div>
-      )}
       {d.guide && <MdContent text={d.guide} />}
     </div>
   )
 }
 
-// ── Dead code / Test coverage view ────────────────────────────────────────────
+// ── Save-to-note (copy to clipboard) ──────────────────────────────────────────
 
-interface AnalysisResult {
+function SaveToNote({ getMarkdown }: { getMarkdown: () => string }) {
+  const [copied, setCopied] = useState(false)
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(getMarkdown())
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1800)
+    } catch { /* clipboard unavailable */ }
+  }
+  return (
+    <button
+      onClick={copy}
+      className="w-full flex items-center justify-center gap-2 border border-border hover:border-muted text-muted hover:text-white rounded-full py-2.5 text-xs font-medium transition-colors"
+    >
+      {copied ? <><Check className="w-3.5 h-3.5 text-success" /> Copied</> : <><Copy className="w-3.5 h-3.5" /> Save to note</>}
+    </button>
+  )
+}
+
+// ── Dead code view ────────────────────────────────────────────────────────────
+
+interface DeadCodeResult {
   total: number
-  by_file: { file: string; functions: { name: string; line: number }[] }[]
+  symbols: { symbol: string; file: string; rel_path: string; line: number; callers: number }[]
   message: string
 }
 
-function AnalysisView({ data }: { data: unknown }) {
-  const d = data as AnalysisResult
-  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+function DeadCodeView({ data }: { data: unknown }) {
+  const d = data as DeadCodeResult
+  const { currentRepo } = useWorkspace()
 
-  const toggle = (file: string) =>
-    setExpanded(prev => {
-      const next = new Set(prev)
-      next.has(file) ? next.delete(file) : next.add(file)
-      return next
-    })
+  const markdown = () =>
+    `**Dead code — ${d.total} symbol${d.total === 1 ? '' : 's'} with zero incoming calls**\n\n` +
+    d.symbols.map(s => `- \`${s.file}\` — ${s.symbol}() · ${s.callers} callers`).join('\n')
 
   return (
     <div className="space-y-3">
-      <div className={`rounded-lg p-3 border text-xs leading-relaxed ${
-        d.total === 0
-          ? 'bg-success/10 border-success/30 text-success'
-          : 'bg-warning/10 border-warning/30 text-warning'
-      }`}>
-        {d.message}
-      </div>
-      {d.by_file?.map(({ file, functions }) => (
-        <div key={file} className="bg-s2 border border-border rounded-lg overflow-hidden">
-          <button
-            onClick={() => toggle(file)}
-            className="w-full flex items-center gap-2 p-3 text-left hover:bg-s2/80 transition-colors"
-          >
-            {expanded.has(file)
-              ? <ChevronDown className="w-3 h-3 text-muted flex-shrink-0" />
-              : <ChevronRight className="w-3 h-3 text-muted flex-shrink-0" />}
-            <p className="text-xs font-mono text-zinc-300 truncate flex-1">{file}</p>
-            <span className="text-[10px] text-muted bg-surface px-1.5 py-0.5 rounded-full flex-shrink-0">
-              {functions.length}
-            </span>
-          </button>
-          {expanded.has(file) && (
-            <div className="border-t border-border px-4 pb-3 pt-2 space-y-1">
-              {functions.map((fn, i) => (
-                <div key={i} className="flex items-center gap-1.5">
-                  <span className="text-[11px] font-mono text-accent">{fn.name}</span>
-                  {fn.line > 0 && <span className="text-[10px] text-muted">:{fn.line}</span>}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+      <p className="text-xs text-muted leading-relaxed">{d.message}</p>
+
+      {d.symbols.map((s, i) => (
+        <button
+          key={i}
+          onClick={() => openGithubBlob(currentRepo, s.rel_path, s.line || 1)}
+          title={`Open ${s.rel_path}:${s.line} on GitHub`}
+          className="w-full flex items-center gap-3 bg-s2/60 hover:bg-s2 border border-border rounded-xl px-4 py-3 text-left transition-colors"
+        >
+          <span className="text-xs font-mono text-red-400 flex-shrink-0">{s.file}</span>
+          <span className="text-xs font-mono text-zinc-300 truncate">
+            {s.symbol}()
+            <span className="text-muted"> · {s.callers} callers</span>
+          </span>
+        </button>
       ))}
+
+      {d.total > 0 && <SaveToNote getMarkdown={markdown} />}
+    </div>
+  )
+}
+
+// ── Test coverage view ────────────────────────────────────────────────────────
+
+interface CoverageResult {
+  total: number
+  untested: number
+  functions: { name: string; file: string; rel_path: string; line: number; coverage: number; tested: boolean }[]
+  message: string
+}
+
+function coverageColor(pct: number): string {
+  if (pct === 0)  return 'text-red-400'
+  if (pct < 50)   return 'text-orange-400'
+  if (pct < 80)   return 'text-yellow-400'
+  return 'text-emerald-400'
+}
+
+function TestCoverageView({ data }: { data: unknown }) {
+  const d = data as CoverageResult
+  const { currentRepo } = useWorkspace()
+
+  const markdown = () =>
+    `**Test coverage (graph-estimated) — ${d.untested} of ${d.total} hot functions untested**\n\n` +
+    d.functions.map(f => `- ${f.name} — ${f.coverage}%${f.coverage === 0 ? ' · no tests' : f.tested ? ' ✓' : ''}`).join('\n')
+
+  return (
+    <div className="space-y-3">
+      <p className="text-xs text-muted leading-relaxed">{d.message}</p>
+
+      {d.functions.map((f, i) => (
+        <button
+          key={i}
+          onClick={() => openGithubBlob(currentRepo, f.rel_path, f.line || 1)}
+          title={`Open ${f.rel_path}:${f.line} on GitHub`}
+          className="w-full flex items-center gap-3 bg-s2/60 hover:bg-s2 border border-border rounded-xl px-4 py-3 text-left transition-colors"
+        >
+          <span className="text-xs font-mono text-yellow-300/90 truncate flex-1 min-w-0">{f.name}</span>
+          <span className={`text-xs font-mono flex-shrink-0 ${coverageColor(f.coverage)}`}>
+            {f.coverage}%
+            {f.coverage === 0
+              ? <span className="text-muted"> · no tests</span>
+              : f.tested && <Check className="inline w-3 h-3 ml-1 -mt-0.5" />}
+          </span>
+        </button>
+      ))}
+
+      {d.total > 0 && <SaveToNote getMarkdown={markdown} />}
     </div>
   )
 }
@@ -532,7 +476,8 @@ function DetailView({
           <>
             {tool.id === 'onboarding'   && <OnboardingContent data={result.data} />}
             {tool.id === 'architecture' && <MdContent text={(result.data as { summary: string }).summary} />}
-            {(tool.id === 'deadcode' || tool.id === 'testcoverage') && <AnalysisView data={result.data} />}
+            {tool.id === 'deadcode'     && <DeadCodeView data={result.data} />}
+            {tool.id === 'testcoverage' && <TestCoverageView data={result.data} />}
           </>
         )}
         {!result?.data && !result?.loading && !result?.error && tool.id !== 'trace' && repoReady && (

@@ -4,10 +4,7 @@ from pydantic import BaseModel
 
 from app.core.config import get_settings
 from app.core.user_context import get_user_id
-from app.db.migrations import (
-    delete_repo_embeddings, get_repo_entry, get_user_repos,
-    upsert_repo_entry, upsert_user,
-)
+from app.db.migrations import delete_repo_embeddings, upsert_user
 from app.services.graph_service import build_repository_graph, write_graph_to_neo4j
 from app.services.orientation_service import read_orientation_data, build_orientation_context
 from app.services.repo_service import (
@@ -15,16 +12,18 @@ from app.services.repo_service import (
     repo_id_from_url, scan_repository,
 )
 from app.services.llm_service import generate_response
-from app.storage.user_stores import clear_user_repo
+from app.storage.user_stores import (
+    clear_user_repo, set_active_repo, get_active_repo, update_active_repo_summary,
+)
 
 
 router = APIRouter()
 
 
-def _generate_and_save_summary(database_url: str, user_id: str, repo_url: str,
-                                rid: str, repository_data: list,
+def _generate_and_save_summary(user_id: str, repo_url: str, rid: str,
+                                repository_data: list,
                                 orientation_data: dict | None = None) -> None:
-    """Run in a background thread — generate repo summary and update DB row."""
+    """Run in a background thread — generate repo summary and store it in memory."""
     try:
         orientation_context = build_orientation_context(orientation_data) if orientation_data else ""
 
@@ -45,23 +44,7 @@ Repository manifest:
 
 Summary:"""
         summary = generate_response(prompt)
-
-        import psycopg2
-        url = database_url.replace("postgresql+psycopg2://", "")
-        user_pass, rest = url.split("@")
-        user, password = user_pass.split(":")
-        host_port, dbname = rest.split("/")
-        host, port = (host_port.split(":") + ["5432"])[:2]
-        conn = psycopg2.connect(host=host, port=int(port), dbname=dbname,
-                                user=user, password=password)
-        cur = conn.cursor()
-        cur.execute(
-            "UPDATE user_repos SET repo_summary = %s WHERE user_id = %s AND repo_id = %s",
-            (summary, user_id, rid)
-        )
-        conn.commit()
-        cur.close()
-        conn.close()
+        update_active_repo_summary(user_id, rid, summary)
         print(f"Repo summary saved for {repo_url}")
     except Exception as e:
         print(f"Background summary error: {e}")
@@ -72,18 +55,6 @@ class RepoRequest(BaseModel):
     github_login: str = ""
     avatar_url: str = ""
     github_token: str = ""
-
-
-@router.get("/repo/{repo_id}/status")
-def repo_status(repo_id: str):
-    """Return whether this repo has file contents and a graph built."""
-    user_id  = get_user_id()
-    settings = get_settings()
-    from app.db.migrations import get_repo_file_count
-    from app.db.neo4j import count_repo_nodes
-    file_count  = get_repo_file_count(settings.database_url, user_id, repo_id)
-    graph_count = count_repo_nodes(user_id, repo_id)
-    return {"has_files": file_count > 0, "has_graph": graph_count > 0, "file_count": file_count}
 
 
 @router.get("/pr-diff")
@@ -137,13 +108,16 @@ def ingest_repo(request: RepoRequest):
 
     github_token = request.github_token.strip()
     remote_sha = get_remote_head_sha(repo_url, github_token)
-    existing   = get_repo_entry(settings.database_url, user_id, rid)
+    existing   = get_active_repo(user_id)
 
-    if existing and remote_sha and existing["commit_sha"] == remote_sha:
+    if (existing and remote_sha
+            and existing.get("repo_id") == rid
+            and existing.get("commit_sha") == remote_sha):
         return {
             "skipped":     True,
             "message":     "Repository is up to date — no new commits since last ingest.",
-            "total_files": existing["file_count"],
+            "total_files": existing.get("file_count", 0),
+            "commit_sha":  remote_sha,
             "files":       [],
         }
 
@@ -167,22 +141,28 @@ def ingest_repo(request: RepoRequest):
     file_count  = len(repository_data)
     chunk_count = sum(len(f["chunks"]) for f in repository_data)
 
-    # Save DB row immediately (empty summary) so the response returns fast
-    upsert_repo_entry(
-        settings.database_url, user_id, repo_url, rid,
-        remote_sha or "", file_count, chunk_count, "",
-    )
+    # Register the active repo in memory (replaces the old user_repos table).
+    set_active_repo(user_id, {
+        "repo_id":     rid,
+        "repo_url":    repo_url,
+        "commit_sha":  remote_sha or "",
+        "file_count":  file_count,
+        "chunk_count": chunk_count,
+        "readme":      (orientation_data or {}).get("readme", ""),
+        "summary":     "",
+    })
 
     # Generate richer summary in background using orientation context
     threading.Thread(
         target=_generate_and_save_summary,
-        args=(settings.database_url, user_id, repo_url, rid, repository_data, orientation_data),
+        args=(user_id, repo_url, rid, repository_data, orientation_data),
         daemon=True,
     ).start()
 
     return {
         "skipped":     False,
         "total_files": file_count,
+        "commit_sha":  remote_sha or "",
         "files": [
             {"file_name": f["file_name"], "total_chunks": len(f["chunks"])}
             for f in repository_data
@@ -190,39 +170,11 @@ def ingest_repo(request: RepoRequest):
     }
 
 
-@router.get("/my-repos")
-def my_repos():
-    user_id  = get_user_id()
-    settings = get_settings()
-    return get_user_repos(settings.database_url, user_id)
-
-
 @router.delete("/repo/{repo_id}")
 def delete_repo(repo_id: str):
     user_id  = get_user_id()
     settings = get_settings()
-    # Remove embeddings from pgvector
+    # Remove embeddings from pgvector and clear in-memory stores + Neo4j graph.
     delete_repo_embeddings(settings.database_url, user_id, repo_id)
-    # Remove from user_repos table
-    _delete_repo_row(settings.database_url, user_id, repo_id)
-    # Clear in-memory stores
     clear_user_repo(user_id, repo_id)
     return {"deleted": True}
-
-
-def _delete_repo_row(database_url: str, user_id: str, repo_id: str) -> None:
-    import psycopg2
-    try:
-        url = database_url.replace("postgresql+psycopg2://", "")
-        user_pass, rest = url.split("@")
-        user, password = user_pass.split(":")
-        host_port, dbname = rest.split("/")
-        host, port = (host_port.split(":") + ["5432"])[:2]
-        conn = psycopg2.connect(host=host, port=int(port), dbname=dbname, user=user, password=password)
-        cur = conn.cursor()
-        cur.execute("DELETE FROM user_repos WHERE user_id = %s AND repo_id = %s", (user_id, repo_id))
-        conn.commit()
-        cur.close()
-        conn.close()
-    except Exception as e:
-        print(f"delete_repo_row error: {e}")
